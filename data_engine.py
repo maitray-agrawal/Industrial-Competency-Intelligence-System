@@ -1,229 +1,449 @@
+"""
+data_engine.py
+--------------
+Typed Excel ETL Pipeline for the IIK-CME system.
+
+Two dataset handlers:
+  - StationDataETL  → complete_trim_station_data.xlsx
+  - TCFDataETL      → TCF_1.xlsx
+
+Pipeline:
+  1. Read Excel sheet
+  2. Auto-detect dataset type from column headers
+  3. Validate required columns
+  4. Normalize cell values via TaxonomyNormalizer
+  5. Detect and skip duplicates
+  6. Stage raw rows (audit trail)
+  7. Upsert into golden record tables
+"""
+
 import os
 import uuid
-import json
+import hashlib
 import pandas as pd
 from datetime import datetime
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from logger import get_logger
 from database import SessionLocal
-from models import StagingData, Trade, Student, Workstation, Skill, AcademicTheory
+from taxonomy import TaxonomyNormalizer
+from models import (
+    StagingData,
+    Shop, Station, Process, Operation, Skill, Tool,
+    Diploma, Semester, Topic, Subtopic,
+    SkillOperationMap, ToolStationMap,
+)
 
 logger = get_logger("DataEngine")
 
-class IngestionPipeline:
-    """Reads raw CSV files and inserts them into the StagingData table."""
-    
+# ---------------------------------------------------------------------------
+# Column signature maps — used to auto-detect which dataset was uploaded
+# ---------------------------------------------------------------------------
+STATION_REQUIRED_COLS = {"shop", "station", "process"}
+STATION_OPTIONAL_COLS = {"tools/equipment", "operation summary", "skill part"}
+
+TCF_REQUIRED_COLS = {"topic", "sub-topic"}
+TCF_OPTIONAL_COLS = {"diploma", "semester", "matched operation", "skill part"}
+
+
+def _row_fingerprint(row: dict) -> str:
+    """SHA-256 fingerprint of a normalised row dict for duplicate detection."""
+    # Safely coerce None → '' so hash is stable and json-serializable
+    canonical = str(sorted({k: (str(v) if v is not None else "") for k, v in row.items()}.items()))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Lowercase column names and strip whitespace."""
+    df.columns = [c.strip().lower() for c in df.columns]
+    return df
+
+
+def _clean_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Replace NaN with None, strip string cells."""
+    df = df.where(pd.notnull(df), None)
+    for col in df.select_dtypes(include="object").columns:
+        df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
+    return df
+
+
+def detect_dataset_type(df: pd.DataFrame) -> str:
+    """
+    Infer dataset type from column headers.
+    Returns 'station_data', 'tcf_data', or raises ValueError.
+    """
+    cols = set(df.columns.str.strip().str.lower().tolist())
+
+    if STATION_REQUIRED_COLS.issubset(cols):
+        return "station_data"
+    if TCF_REQUIRED_COLS.issubset(cols):
+        return "tcf_data"
+
+    raise ValueError(
+        f"Cannot identify dataset type from columns: {list(cols)}. "
+        f"Expected station data columns {STATION_REQUIRED_COLS} or "
+        f"TCF columns {TCF_REQUIRED_COLS}."
+    )
+
+
+# =============================================================================
+# STATION DATA ETL
+# =============================================================================
+
+class StationDataETL:
+    """
+    Ingests complete_trim_station_data.xlsx.
+    Column map: shop | station | process | tools/equipment | operation summary | skill part
+    """
+
     @staticmethod
-    def ingest_csv(file_path: str, source_type: str) -> str:
-        batch_id = str(uuid.uuid4())
-        logger.info(f"Starting ingestion for {file_path}. Batch ID: {batch_id}")
-        
-        try:
-            # Read CSV using pandas
-            df = pd.read_csv(file_path)
-            
-            # Convert NaN to None for proper JSON serialization
-            df = df.where(pd.notnull(df), None)
-            records = df.to_dict(orient="records")
-            
-            with SessionLocal() as session:
-                for row in records:
-                    staging_record = StagingData(
+    def _make_code(*parts: str) -> str:
+        """Build a deterministic entity code from normalized name parts."""
+        joined = "_".join(TaxonomyNormalizer.normalize_code(p) for p in parts if p)
+        return joined[:64]
+
+    @classmethod
+    def ingest(cls, df: pd.DataFrame, batch_id: str) -> dict:
+        df = _normalize_columns(df)
+        df = _clean_df(df)
+
+        stats = {"shops": 0, "stations": 0, "processes": 0,
+                 "operations": 0, "skills": 0, "tools": 0,
+                 "staged": 0, "skipped": 0, "errors": 0}
+
+        with SessionLocal() as session:
+            try:
+                seen_fingerprints: set[str] = set()
+
+                for idx, row in df.iterrows():
+                    raw = row.to_dict()
+                    fp = _row_fingerprint(raw)
+
+                    # Dedup within this batch
+                    if fp in seen_fingerprints:
+                        stats["skipped"] += 1
+                        continue
+                    seen_fingerprints.add(fp)
+
+                    # Stage raw row
+                    staging = StagingData(
                         batch_id=batch_id,
-                        source_file=source_type,
-                        raw_data=row,
-                        status="PENDING"
+                        source_file="station_data",
+                        raw_data=raw,
+                        status="PENDING",
                     )
-                    session.add(staging_record)
-                
-                session.commit()
-            
-            logger.info(f"Successfully ingested {len(records)} records from {file_path}.")
-            return batch_id
-            
-        except FileNotFoundError:
-            logger.error(f"File not found: {file_path}")
-            raise
-        except Exception as e:
-            logger.error(f"Error during ingestion of {file_path}: {str(e)}")
-            raise
+                    session.add(staging)
 
-class ValidationEngine:
-    """Validates pending staging records based on expected schema."""
-    
-    EXPECTED_SCHEMAS = {
-        "student_data": ["student_code", "first_name", "last_name", "trade_name", "enrollment_date"],
-        "trade_data": ["trade_name", "description"],
-        "workstation_data": ["workstation_code", "description", "trade_name"],
-        "skill_data": ["skill_code", "name", "description", "workstation_code"],
-        "theory_data": ["module_code", "title", "content", "skill_code"]
-    }
+                    try:
+                        # --- SHOP ---
+                        raw_shop = raw.get("shop") or "UNKNOWN_SHOP"
+                        shop_code = TaxonomyNormalizer.normalize_code(raw_shop)
+                        shop_name = TaxonomyNormalizer.normalize(raw_shop)
+                        shop = session.query(Shop).filter_by(shop_code=shop_code).first()
+                        if not shop:
+                            shop = Shop(shop_code=shop_code, name=shop_name)
+                            session.add(shop)
+                            session.flush()
+                            stats["shops"] += 1
 
-    @staticmethod
-    def validate_pending_records():
-        logger.info("Starting validation of PENDING records in staging.")
-        
-        with SessionLocal() as session:
-            try:
-                pending_records = session.query(StagingData).filter(StagingData.status == "PENDING").all()
-                
-                for record in pending_records:
-                    source_type = record.source_file
-                    raw_data = record.raw_data
-                    
-                    if source_type not in ValidationEngine.EXPECTED_SCHEMAS:
-                        record.status = "FAILED"
-                        record.error_log = f"Unknown source file type: {source_type}"
-                        continue
-                    
-                    expected_keys = ValidationEngine.EXPECTED_SCHEMAS[source_type]
-                    missing_keys = [k for k in expected_keys if k not in raw_data or raw_data[k] is None]
-                    
-                    if missing_keys:
-                        record.status = "FAILED"
-                        record.error_log = f"Missing or null required keys: {missing_keys}"
-                    else:
-                        record.status = "VALIDATED"
-                        
+                        # --- STATION ---
+                        raw_stn = raw.get("station") or f"STN_{idx}"
+                        station_code = cls._make_code(shop_code, raw_stn)
+                        station_name = TaxonomyNormalizer.normalize(raw_stn)
+                        station = session.query(Station).filter_by(station_code=station_code).first()
+                        if not station:
+                            station = Station(
+                                station_code=station_code,
+                                name=station_name,
+                                shop_id=shop.id,
+                            )
+                            session.add(station)
+                            session.flush()
+                            stats["stations"] += 1
+
+                        # --- PROCESS ---
+                        raw_proc = raw.get("process") or f"PROC_{idx}"
+                        process_code = cls._make_code(station_code, raw_proc)
+                        process_name = TaxonomyNormalizer.normalize(raw_proc)
+                        process = session.query(Process).filter_by(process_code=process_code).first()
+                        if not process:
+                            process = Process(
+                                process_code=process_code,
+                                name=process_name,
+                                station_id=station.id,
+                            )
+                            session.add(process)
+                            session.flush()
+                            stats["processes"] += 1
+
+                        # --- OPERATION (operation summary) ---
+                        raw_op_summary = raw.get("operation summary") or ""
+                        raw_skill_part = raw.get("skill part") or ""
+                        op_code = cls._make_code(process_code, raw_op_summary or f"OP_{idx}")
+                        operation = session.query(Operation).filter_by(operation_code=op_code).first()
+                        if not operation:
+                            operation = Operation(
+                                operation_code=op_code,
+                                name=TaxonomyNormalizer.normalize(raw_op_summary) or process_name,
+                                operation_summary=raw_op_summary,
+                                skill_part=TaxonomyNormalizer.normalize(raw_skill_part),
+                                process_id=process.id,
+                            )
+                            session.add(operation)
+                            session.flush()
+                            stats["operations"] += 1
+
+                        # --- SKILL (from skill part column) ---
+                        if raw_skill_part:
+                            skill_code = cls._make_code("SKILL", raw_skill_part)
+                            skill_name = TaxonomyNormalizer.normalize(raw_skill_part)
+                            skill = session.query(Skill).filter_by(skill_code=skill_code).first()
+                            if not skill:
+                                skill = Skill(
+                                    skill_code=skill_code,
+                                    name=skill_name,
+                                    skill_part=skill_name,
+                                )
+                                session.add(skill)
+                                session.flush()
+                                stats["skills"] += 1
+
+                            # Link skill ↔ operation
+                            link = session.query(SkillOperationMap).filter_by(
+                                skill_id=skill.id, operation_id=operation.id
+                            ).first()
+                            if not link:
+                                session.add(SkillOperationMap(
+                                    skill_id=skill.id,
+                                    operation_id=operation.id,
+                                    confidence=1.0,
+                                    method="keyword",
+                                ))
+
+                        # --- TOOLS (tools/equipment column — may be comma-separated) ---
+                        raw_tools = raw.get("tools/equipment") or ""
+                        if raw_tools:
+                            tool_names = [t.strip() for t in str(raw_tools).split(",") if t.strip()]
+                            for tool_name_raw in tool_names:
+                                tool_code = cls._make_code("TOOL", tool_name_raw)
+                                tool_norm = TaxonomyNormalizer.normalize(tool_name_raw)
+                                tool = session.query(Tool).filter_by(tool_code=tool_code).first()
+                                if not tool:
+                                    tool = Tool(
+                                        tool_code=tool_code,
+                                        name=tool_norm,
+                                    )
+                                    session.add(tool)
+                                    session.flush()
+                                    stats["tools"] += 1
+
+                                # Link tool ↔ station
+                                tlink = session.query(ToolStationMap).filter_by(
+                                    tool_id=tool.id, station_id=station.id
+                                ).first()
+                                if not tlink:
+                                    session.add(ToolStationMap(
+                                        tool_id=tool.id,
+                                        station_id=station.id,
+                                    ))
+
+                        staging.status = "PROCESSED"
+                        stats["staged"] += 1
+
+                    except Exception as row_err:
+                        logger.error(f"Row {idx} failed: {row_err}")
+                        staging.status = "FAILED"
+                        staging.error_log = str(row_err)
+                        stats["errors"] += 1
+
                 session.commit()
-                logger.info(f"Validation complete for {len(pending_records)} records.")
-                
+
             except SQLAlchemyError as e:
                 session.rollback()
-                logger.error(f"Database error during validation: {str(e)}")
-                raise
-            except Exception as e:
-                logger.error(f"Unexpected error during validation: {str(e)}")
+                logger.error(f"Station ETL database error: {e}")
                 raise
 
-class NormalizationEngine:
-    """Migrates VALIDATED staging records into the Golden Record tables."""
-    
+        logger.info(f"Station ETL complete — {stats}")
+        return stats
+
+
+# =============================================================================
+# TCF THEORY DATA ETL
+# =============================================================================
+
+class TCFDataETL:
+    """
+    Ingests TCF_1.xlsx.
+    Column map: diploma | semester | topic | sub-topic | matched operation | skill part
+    """
+
     @staticmethod
-    def process_validated_records():
-        logger.info("Starting normalization of VALIDATED records into Golden Records.")
-        
+    def _make_code(*parts: str) -> str:
+        joined = "_".join(TaxonomyNormalizer.normalize_code(p) for p in parts if p)
+        return joined[:64]
+
+    @classmethod
+    def ingest(cls, df: pd.DataFrame, batch_id: str) -> dict:
+        df = _normalize_columns(df)
+        df = _clean_df(df)
+
+        stats = {"diplomas": 0, "semesters": 0, "topics": 0,
+                 "subtopics": 0, "staged": 0, "skipped": 0, "errors": 0}
+
         with SessionLocal() as session:
             try:
-                # We must process in order of dependency to avoid foreign key violations.
-                # Trade -> Workstation -> Skill -> Theory -> Student
-                
-                order_of_processing = [
-                    "trade_data",
-                    "workstation_data",
-                    "skill_data",
-                    "theory_data",
-                    "student_data"
-                ]
-                
-                for source_type in order_of_processing:
-                    records = session.query(StagingData).filter(
-                        StagingData.status == "VALIDATED",
-                        StagingData.source_file == source_type
-                    ).all()
-                    
-                    if not records:
+                seen_fingerprints: set[str] = set()
+
+                for idx, row in df.iterrows():
+                    raw = row.to_dict()
+                    fp = _row_fingerprint(raw)
+
+                    if fp in seen_fingerprints:
+                        stats["skipped"] += 1
                         continue
-                    
-                    logger.info(f"Processing {len(records)} records for {source_type}")
-                    
-                    for record in records:
+                    seen_fingerprints.add(fp)
+
+                    staging = StagingData(
+                        batch_id=batch_id,
+                        source_file="tcf_data",
+                        raw_data=raw,
+                        status="PENDING",
+                    )
+                    session.add(staging)
+
+                    try:
+                        # --- DIPLOMA ---
+                        raw_dip = str(raw.get("diploma") or "DEFAULT_DIPLOMA").strip()
+                        dip_code = cls._make_code("DIP", raw_dip)
+                        diploma = session.query(Diploma).filter_by(code=dip_code).first()
+                        if not diploma:
+                            diploma = Diploma(
+                                code=dip_code,
+                                name=TaxonomyNormalizer.normalize(raw_dip),
+                            )
+                            session.add(diploma)
+                            session.flush()
+                            stats["diplomas"] += 1
+
+                        # --- SEMESTER ---
+                        raw_sem = raw.get("semester")
                         try:
-                            NormalizationEngine._process_single_record(session, source_type, record.raw_data)
-                            record.status = "PROCESSED"
-                        except Exception as e:
-                            logger.error(f"Failed to process record {record.id}: {str(e)}")
-                            record.status = "FAILED"
-                            record.error_log = f"Normalization error: {str(e)}"
-                            
+                            sem_num = int(float(str(raw_sem))) if raw_sem is not None else 1
+                        except (ValueError, TypeError):
+                            sem_num = 1
+
+                        semester = session.query(Semester).filter_by(
+                            number=sem_num, diploma_id=diploma.id
+                        ).first()
+                        if not semester:
+                            semester = Semester(number=sem_num, diploma_id=diploma.id)
+                            session.add(semester)
+                            session.flush()
+                            stats["semesters"] += 1
+
+                        # --- TOPIC ---
+                        raw_topic = str(raw.get("topic") or f"TOPIC_{idx}").strip()
+                        topic_code = cls._make_code("TOPIC", dip_code, str(sem_num), raw_topic)
+                        topic = session.query(Topic).filter_by(topic_code=topic_code).first()
+                        if not topic:
+                            topic = Topic(
+                                topic_code=topic_code,
+                                title=TaxonomyNormalizer.normalize(raw_topic),
+                                semester_id=semester.id,
+                            )
+                            session.add(topic)
+                            session.flush()
+                            stats["topics"] += 1
+
+                        # --- SUBTOPIC ---
+                        raw_sub = str(raw.get("sub-topic") or f"SUBTOPIC_{idx}").strip()
+                        raw_matched_op = str(raw.get("matched operation") or "").strip()
+                        raw_skill_part = str(raw.get("skill part") or "").strip()
+                        subtopic_code = cls._make_code("ST", topic_code, raw_sub)
+                        subtopic = session.query(Subtopic).filter_by(subtopic_code=subtopic_code).first()
+                        if not subtopic:
+                            subtopic = Subtopic(
+                                subtopic_code=subtopic_code,
+                                title=TaxonomyNormalizer.normalize(raw_sub),
+                                matched_operation=raw_matched_op,
+                                skill_part=TaxonomyNormalizer.normalize(raw_skill_part),
+                                topic_id=topic.id,
+                            )
+                            session.add(subtopic)
+                            session.flush()
+                            stats["subtopics"] += 1
+
+                        staging.status = "PROCESSED"
+                        stats["staged"] += 1
+
+                    except Exception as row_err:
+                        logger.error(f"TCF Row {idx} failed: {row_err}")
+                        staging.status = "FAILED"
+                        staging.error_log = str(row_err)
+                        stats["errors"] += 1
+
                 session.commit()
-                logger.info("Normalization complete.")
-                
+
             except SQLAlchemyError as e:
                 session.rollback()
-                logger.error(f"Database error during normalization: {str(e)}")
+                logger.error(f"TCF ETL database error: {e}")
                 raise
-            except Exception as e:
-                logger.error(f"Unexpected error during normalization: {str(e)}")
-                raise
+
+        logger.info(f"TCF ETL complete — {stats}")
+        return stats
+
+
+# =============================================================================
+# UNIFIED INGESTION ENTRYPOINT
+# =============================================================================
+
+class IngestionPipeline:
+    """
+    Public facade used by app.py.
+    Auto-detects dataset type, routes to the appropriate ETL class.
+    """
 
     @staticmethod
-    def _process_single_record(session: Session, source_type: str, data: dict):
-        """Processes a single dictionary into the appropriate ORM model."""
-        
-        if source_type == "trade_data":
-            trade = session.query(Trade).filter_by(name=data["trade_name"]).first()
-            if not trade:
-                trade = Trade(name=data["trade_name"], description=data.get("description"))
-                session.add(trade)
-                session.flush() # Force insert to get ID
-                
-        elif source_type == "workstation_data":
-            trade = session.query(Trade).filter_by(name=data["trade_name"]).first()
-            if not trade:
-                raise ValueError(f"Trade '{data['trade_name']}' does not exist.")
-            
-            ws = session.query(Workstation).filter_by(workstation_code=data["workstation_code"]).first()
-            if not ws:
-                ws = Workstation(
-                    workstation_code=data["workstation_code"],
-                    description=data.get("description"),
-                    trade_id=trade.id
-                )
-                session.add(ws)
-                session.flush()
+    def ingest_excel(file_path: str, source_type: str = "auto") -> dict:
+        """
+        Read an Excel file and run the appropriate ETL pipeline.
 
-        elif source_type == "skill_data":
-            ws = session.query(Workstation).filter_by(workstation_code=data["workstation_code"]).first()
-            if not ws:
-                raise ValueError(f"Workstation '{data['workstation_code']}' does not exist.")
-                
-            skill = session.query(Skill).filter_by(skill_code=data["skill_code"]).first()
-            if not skill:
-                skill = Skill(
-                    skill_code=data["skill_code"],
-                    name=data["name"],
-                    description=data.get("description"),
-                    workstation_id=ws.id
-                )
-                session.add(skill)
-                session.flush()
+        Args:
+            file_path:   Absolute path to the .xlsx / .xls file.
+            source_type: 'auto' (default) | 'station_data' | 'tcf_data'
 
-        elif source_type == "theory_data":
-            skill = session.query(Skill).filter_by(skill_code=data["skill_code"]).first()
-            if not skill:
-                raise ValueError(f"Skill '{data['skill_code']}' does not exist.")
-                
-            theory = session.query(AcademicTheory).filter_by(module_code=data["module_code"]).first()
-            if not theory:
-                theory = AcademicTheory(
-                    module_code=data["module_code"],
-                    title=data["title"],
-                    content=data.get("content"),
-                    skill_id=skill.id
-                )
-                session.add(theory)
-                session.flush()
-                
-        elif source_type == "student_data":
-            trade = session.query(Trade).filter_by(name=data["trade_name"]).first()
-            if not trade:
-                raise ValueError(f"Trade '{data['trade_name']}' does not exist.")
-                
-            student = session.query(Student).filter_by(student_code=data["student_code"]).first()
-            if not student:
-                # Parse date if necessary, assuming YYYY-MM-DD
-                enrollment_date = None
-                if data.get("enrollment_date"):
-                    enrollment_date = datetime.strptime(data["enrollment_date"], "%Y-%m-%d").date()
-                    
-                student = Student(
-                    student_code=data["student_code"],
-                    first_name=data["first_name"],
-                    last_name=data["last_name"],
-                    trade_id=trade.id,
-                    enrollment_date=enrollment_date
-                )
-                session.add(student)
-                session.flush()
+        Returns:
+            dict with ingestion stats.
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Upload file not found: {file_path}")
+
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in {".xlsx", ".xls"}:
+            raise ValueError(f"Unsupported file format '{ext}'. Only .xlsx and .xls are accepted.")
+
+        try:
+            # Use openpyxl explicitly for .xlsx to avoid engine ambiguity
+            engine_arg = "openpyxl" if file_path.lower().endswith(".xlsx") else "xlrd"
+            df = pd.read_excel(file_path, engine=engine_arg)
+        except Exception as e:
+            raise ValueError(f"Failed to read Excel file: {e}") from e
+
+        # Drop completely empty rows before any processing
+        df = df.dropna(how="all").reset_index(drop=True)
+
+        if df.empty:
+            raise ValueError("Uploaded Excel file contains no data rows.")
+
+        # Auto-detect dataset type from column headers
+        if source_type == "auto":
+            source_type = detect_dataset_type(df)
+
+        batch_id = str(uuid.uuid4())
+        logger.info(f"Starting ingestion — file='{file_path}' type='{source_type}' batch='{batch_id}'")
+
+        if source_type == "station_data":
+            return StationDataETL.ingest(df, batch_id)
+        elif source_type == "tcf_data":
+            return TCFDataETL.ingest(df, batch_id)
+        else:
+            raise ValueError(f"Unknown source_type: '{source_type}'")

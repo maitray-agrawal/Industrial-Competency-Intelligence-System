@@ -1,62 +1,178 @@
 {% extends "base.html" %}
+{% block title %}Admin Panel{% endblock %}
 
 {% block content %}
 <div class="admin-header">
-    <h1>Data Ingestion & Auditing</h1>
-    <p>Upload raw CSV files to securely normalize and index data.</p>
+    <h1>⚙ Administration Panel</h1>
+    <p>Data ingestion, mapping engine control, audit log, and system health.</p>
 </div>
 
-<div class="upload-card fade-in">
-    <form action="{{ url_for('ingest') }}" method="POST" enctype="multipart/form-data" class="upload-form">
-        <div class="form-group">
-            <label for="source_type">Data Schema Type</label>
-            <select name="source_type" id="source_type" class="form-select">
-                <option value="trade_data">Trades Data</option>
-                <option value="workstation_data">Workstations Data</option>
-                <option value="skill_data">Skills Data</option>
-                <option value="theory_data">Academic Theory Data</option>
-                <option value="student_data">Student Induction Data</option>
-            </select>
-        </div>
-        
-        <div class="form-group">
-            <label for="file">Select CSV File</label>
-            <input type="file" name="file" id="file" class="form-file" accept=".csv">
-        </div>
-        
-        <button type="submit" class="primary-btn submit-upload">Ingest & Normalize</button>
-    </form>
+<!-- Tab Nav -->
+<div class="tab-nav" id="admin-tabs">
+    <button class="tab-btn active" onclick="showTab('upload')" id="tab-upload">📤 Upload Data</button>
+    <button class="tab-btn" onclick="showTab('controls')" id="tab-controls">🔄 Engine Controls</button>
+    <button class="tab-btn" onclick="showTab('audit')" id="tab-audit">📋 Audit Log</button>
+    <button class="tab-btn" onclick="showTab('health')" id="tab-health">📊 System Health</button>
 </div>
 
-<div class="audit-section fade-in">
-    <h2>Recent Staging Audits</h2>
-    <table class="data-table">
+<!-- TAB: Upload -->
+<div class="tab-pane active fade-in" id="pane-upload">
+    <div class="upload-card">
+        <h2>Upload Excel Dataset</h2>
+        <p class="upload-hint">
+            System auto-detects file type from column headers.<br>
+            Accepted: <code>complete_trim_station_data.xlsx</code> &nbsp;|&nbsp; <code>TCF_1.xlsx</code>
+        </p>
+        <form action="{{ url_for('ingest') }}" method="POST" enctype="multipart/form-data"
+              class="upload-form" id="upload-form">
+            <div class="form-group">
+                <label for="source_type">Dataset Type</label>
+                <select name="source_type" id="source_type" class="form-select">
+                    <option value="auto">🔍 Auto-Detect (Recommended)</option>
+                    <option value="station_data">🏭 Station Data (Trim Station)</option>
+                    <option value="tcf_data">📚 TCF Theory Data</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="file">Select Excel File</label>
+                <div class="file-drop-zone" id="file-drop-zone">
+                    <input type="file" name="file" id="file" class="form-file-hidden"
+                           accept=".xlsx,.xls" onchange="updateFileLabel(this)">
+                    <label for="file" class="file-drop-label" id="file-drop-label">
+                        <span class="file-icon">📁</span>
+                        <span id="file-name-display">Drag &amp; drop or click to select .xlsx / .xls</span>
+                    </label>
+                </div>
+            </div>
+            <button type="submit" class="primary-btn submit-upload" id="ingest-btn">
+                ⚡ Ingest &amp; Normalize
+            </button>
+        </form>
+    </div>
+
+    <!-- Dataset Schema Reference -->
+    <div class="schema-ref-grid">
+        <div class="schema-card">
+            <h3>📋 Station Data Schema</h3>
+            <table class="schema-table">
+                <tr><th>Column</th><th>Required</th></tr>
+                <tr><td>shop</td><td><span class="badge-req">Required</span></td></tr>
+                <tr><td>station</td><td><span class="badge-req">Required</span></td></tr>
+                <tr><td>process</td><td><span class="badge-req">Required</span></td></tr>
+                <tr><td>tools/equipment</td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td>operation summary</td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td>skill part</td><td><span class="badge-opt">Optional</span></td></tr>
+            </table>
+        </div>
+        <div class="schema-card">
+            <h3>📚 TCF Theory Schema</h3>
+            <table class="schema-table">
+                <tr><th>Column</th><th>Required</th></tr>
+                <tr><td>topic</td><td><span class="badge-req">Required</span></td></tr>
+                <tr><td>sub-topic</td><td><span class="badge-req">Required</span></td></tr>
+                <tr><td>diploma</td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td>semester</td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td>matched operation</td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td>skill part</td><td><span class="badge-opt">Optional</span></td></tr>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- TAB: Engine Controls -->
+<div class="tab-pane fade-in" id="pane-controls" style="display:none">
+    <div class="controls-grid">
+        <div class="control-card">
+            <h3>🧠 Recompute Knowledge Mappings</h3>
+            <p>Re-runs TF-IDF + keyword mapping between theory topics and station skills. Run this after uploading both datasets.</p>
+            <form action="{{ url_for('remap') }}" method="POST" id="remap-form">
+                <button type="submit" class="primary-btn" id="remap-btn">Recompute Mappings</button>
+            </form>
+        </div>
+        <div class="control-card">
+            <h3>🔍 Rebuild Search Index</h3>
+            <p>Rebuilds the FTS5 full-text search index from all current golden records.</p>
+            <form action="{{ url_for('rebuild_index') }}" method="POST" id="rebuild-form">
+                <button type="submit" class="secondary-btn" id="rebuild-btn">Rebuild FTS5 Index</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- TAB: Audit Log -->
+<div class="tab-pane fade-in" id="pane-audit" style="display:none">
+    <h2>Recent Batch Uploads</h2>
+    <table class="data-table" id="batch-table">
         <thead>
             <tr>
                 <th>Batch ID</th>
-                <th>Source Type</th>
-                <th>Status</th>
+                <th>Dataset</th>
+                <th>Total</th>
+                <th>Processed</th>
+                <th>Failed</th>
                 <th>Timestamp</th>
-                <th>Error Log</th>
             </tr>
         </thead>
         <tbody>
-            {% for record in staging_data %}
+            {% for b in batch_summary %}
             <tr>
-                <td class="mono">{{ record.batch_id[:8] }}...</td>
-                <td>{{ record.source_file }}</td>
-                <td>
-                    <span class="status-badge status-{{ record.status | lower }}">{{ record.status }}</span>
-                </td>
-                <td>{{ record.created_at.strftime('%Y-%m-%d %H:%M') if record.created_at else 'N/A' }}</td>
-                <td class="error-cell" title="{{ record.error_log }}">{{ record.error_log or '-' }}</td>
+                <td class="mono">{{ b.batch_id[:12] }}...</td>
+                <td><span class="entity-badge badge-{{ b.source_file.split('_')[0] }}">{{ b.source_file }}</span></td>
+                <td>{{ b.total }}</td>
+                <td><span class="text-success">{{ b.processed or 0 }}</span></td>
+                <td><span class="text-danger">{{ b.failed or 0 }}</span></td>
+                <td>{{ b.timestamp.strftime('%Y-%m-%d %H:%M') if b.timestamp else 'N/A' }}</td>
             </tr>
             {% else %}
-            <tr>
-                <td colspan="5" class="empty-state">No staging records found.</td>
-            </tr>
+            <tr><td colspan="6" class="empty-state">No uploads yet.</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+<!-- TAB: System Health -->
+<div class="tab-pane fade-in" id="pane-health" style="display:none">
+    <h2>System Health</h2>
+    <div class="stats-grid">
+        <div class="stat-card"><div class="stat-icon">🏭</div><div class="stat-value">{{ stats.shops }}</div><div class="stat-label">Shops</div></div>
+        <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">{{ stats.stations }}</div><div class="stat-label">Stations</div></div>
+        <div class="stat-card"><div class="stat-icon">⚙️</div><div class="stat-value">{{ stats.processes }}</div><div class="stat-label">Processes</div></div>
+        <div class="stat-card"><div class="stat-icon">🎯</div><div class="stat-value">{{ stats.operations }}</div><div class="stat-label">Operations</div></div>
+        <div class="stat-card"><div class="stat-icon">💡</div><div class="stat-value">{{ stats.skills }}</div><div class="stat-label">Skills</div></div>
+        <div class="stat-card"><div class="stat-icon">🛠️</div><div class="stat-value">{{ stats.tools }}</div><div class="stat-label">Tools</div></div>
+        <div class="stat-card"><div class="stat-icon">📚</div><div class="stat-value">{{ stats.topics }}</div><div class="stat-label">Topics</div></div>
+        <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value">{{ stats.mappings }}</div><div class="stat-label">Competency Maps</div></div>
+    </div>
+</div>
+
+<script>
+function showTab(name) {
+    document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('pane-' + name).style.display = 'block';
+    document.getElementById('tab-' + name).classList.add('active');
+}
+function updateFileLabel(input) {
+    const label = document.getElementById('file-name-display');
+    if (input.files && input.files[0]) {
+        label.textContent = '📄 ' + input.files[0].name;
+        document.getElementById('file-drop-zone').classList.add('file-selected');
+    }
+}
+// Drag and drop
+const dropZone = document.getElementById('file-drop-zone');
+if (dropZone) {
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        if (files.length) {
+            document.getElementById('file').files = files;
+            updateFileLabel(document.getElementById('file'));
+        }
+    });
+}
+</script>
 {% endblock %}

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Knowledge Graph{% endblock %}
+
+{% block content %}
+<div class="graph-header">
+    <div>
+        <h1>Industrial Knowledge Graph</h1>
+        <p>Force-directed visualization of all entity relationships. Click a node to explore.</p>
+    </div>
+    <div class="graph-legend">
+        <span class="legend-dot" style="background:#3b82f6"></span>Shop
+        <span class="legend-dot" style="background:#06b6d4"></span>Station
+        <span class="legend-dot" style="background:#10b981"></span>Process
+        <span class="legend-dot" style="background:#f59e0b"></span>Operation
+        <span class="legend-dot" style="background:#f97316"></span>Skill
+        <span class="legend-dot" style="background:#ef4444"></span>Tool
+        <span class="legend-dot" style="background:#a855f7"></span>Topic
+        <span class="legend-dot" style="background:#ec4899"></span>Subtopic
+    </div>
+</div>
+
+<div class="graph-layout">
+    <div id="graph-container" class="graph-canvas">
+        <div class="graph-loading" id="graph-loading">
+            <div class="spinner"></div>
+            <p>Loading knowledge graph…</p>
+        </div>
+        <div id="graph-network"></div>
+    </div>
+
+    <div class="graph-sidebar" id="graph-sidebar">
+        <div class="sidebar-empty" id="sidebar-empty">
+            <p>👆 Click a node to see details</p>
+        </div>
+        <div class="sidebar-detail" id="sidebar-detail" style="display:none">
+            <div id="sidebar-type-badge" class="entity-badge"></div>
+            <h3 id="sidebar-title"></h3>
+            <div id="sidebar-body"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Vis.js bundled locally (offline-safe) -->
+<script src="{{ url_for('static', filename='js/vis-network.min.js') }}"></script>
+<script>
+(function () {
+    const container = document.getElementById('graph-network');
+    const loading   = document.getElementById('graph-loading');
+    const sidebar   = document.getElementById('sidebar-detail');
+    const sidebarEmpty = document.getElementById('sidebar-empty');
+
+    fetch('/api/graph-data')
+        .then(r => r.json())
+        .then(data => {
+            loading.style.display = 'none';
+
+            if (!data.nodes || data.nodes.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="padding:4rem"><p>No graph data yet.</p><p>Upload your datasets from the <a href="/admin">Admin Panel</a>.</p></div>';
+                return;
+            }
+
+            const options = {
+                nodes: {
+                    shape: 'dot',
+                    size: 16,
+                    font: { color: '#f8fafc', size: 12, face: 'Inter, system-ui, sans-serif' },
+                    borderWidth: 2,
+                    borderWidthSelected: 3,
+                },
+                edges: {
+                    color: { color: '#475569', opacity: 0.6 },
+                    font: { color: '#94a3b8', size: 10, align: 'middle' },
+                    smooth: { type: 'dynamic' },
+                    arrows: { to: { enabled: true, scaleFactor: 0.6 } },
+                },
+                physics: {
+                    stabilization: { iterations: 200 },
+                    barnesHut: { gravitationalConstant: -6000, springLength: 120 },
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 200,
+                    navigationButtons: true,
+                    keyboard: true,
+                },
+                layout: { improvedLayout: true },
+            };
+
+            const network = new vis.Network(
+                container,
+                { nodes: new vis.DataSet(data.nodes), edges: new vis.DataSet(data.edges) },
+                options
+            );
+
+            network.on('click', function (params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    const node = data.nodes.find(n => n.id === nodeId);
+                    if (!node) return;
+
+                    sidebarEmpty.style.display = 'none';
+                    sidebar.style.display = 'block';
+
+                    document.getElementById('sidebar-type-badge').textContent = node.group.toUpperCase();
+                    document.getElementById('sidebar-type-badge').className = 'entity-badge badge-' + node.group.toLowerCase();
+                    document.getElementById('sidebar-title').textContent = node.label;
+
+                    // Show connections
+                    const connected = network.getConnectedNodes(nodeId);
+                    const connectedNodes = connected.map(cid => {
+                        const cn = data.nodes.find(n => n.id === cid);
+                        return cn ? `<span class="sidebar-conn badge-${cn.group}">${cn.label}</span>` : '';
+                    }).filter(Boolean);
+
+                    document.getElementById('sidebar-body').innerHTML = `
+                        <p class="sidebar-desc">${node.title}</p>
+                        <div class="sidebar-meta">
+                            <strong>Type:</strong> ${node.group.toUpperCase()}<br>
+                            <strong>Connections:</strong> ${connected.length}
+                        </div>
+                        ${connectedNodes.length ? '<div class="sidebar-connections">' + connectedNodes.join(' ') + '</div>' : ''}
+                    `;
+                } else {
+                    sidebar.style.display = 'none';
+                    sidebarEmpty.style.display = 'block';
+                }
+            });
+        })
+        .catch(err => {
+            loading.innerHTML = '<p class="text-danger">Failed to load graph data.</p>';
+            console.error(err);
+        });
+})();
+</script>
+{% endblock %}

@@ -3,30 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Knowledge Mapping Engine</title>
-    <!-- 100% Offline Custom CSS -->
+    <title>{% block title %}IIK-CME{% endblock %} — Industrial Knowledge Engine</title>
+    <meta name="description" content="Offline Industrial Knowledge & Competency Mapping Engine for manufacturing environments.">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <!-- Load custom fonts from Google optionally, but fallback to local sans-serif for air-gapped -->
 </head>
 <body>
-    <nav class="navbar">
-        <div class="nav-brand">INDUSTRIAL KNOWLEDGE ENGINE</div>
+    <nav class="navbar" role="navigation" aria-label="Main navigation">
+        <div class="nav-brand">
+            <span class="nav-logo">⚙</span>
+            <span>IIK-CME</span>
+        </div>
         <div class="nav-links">
-            <a href="{{ url_for('index') }}" class="nav-btn">Dashboard</a>
-            <a href="{{ url_for('admin') }}" class="nav-btn">Admin Panel</a>
+            <a href="{{ url_for('index') }}" class="nav-btn {% if request.endpoint == 'index' %}active{% endif %}" id="nav-dashboard">Dashboard</a>
+            <a href="{{ url_for('search') }}" class="nav-btn {% if request.endpoint == 'search' %}active{% endif %}" id="nav-search">Search</a>
+            <a href="{{ url_for('graph') }}" class="nav-btn {% if request.endpoint == 'graph' %}active{% endif %}" id="nav-graph">Knowledge Graph</a>
+            <a href="{{ url_for('admin') }}" class="nav-btn nav-admin {% if request.endpoint == 'admin' %}active{% endif %}" id="nav-admin">Admin</a>
         </div>
     </nav>
-    
+
     <div class="container">
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             {% for category, message in messages %}
-              <div class="alert alert-{{ category }}">{{ message }}</div>
+              <div class="alert alert-{{ category }}" role="alert">{{ message }}</div>
             {% endfor %}
           {% endif %}
         {% endwith %}
-        
+
         {% block content %}{% endblock %}
     </div>
+
+    <footer class="footer">
+        <span>IIK-CME &mdash; 100% Offline &mdash; Air-Gapped Industrial Intelligence</span>
+        <span class="footer-badge">SECURE OFFLINE MODE</span>
+    </footer>
 </body>
 </html>

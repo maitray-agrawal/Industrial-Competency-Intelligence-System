@@ -1,64 +1,110 @@
 {% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="hero-section">
-    <h1>Competency Integration</h1>
-    <p>Secure offline retrieval and heuristic mapping.</p>
-    
-    <form action="{{ url_for('search') }}" method="GET" class="search-form">
-        <input type="text" name="q" placeholder="Search workstation processes, tools, skills..." value="{{ query or '' }}" class="search-input">
-        <button type="submit" class="primary-btn">Search FTS5</button>
-    </form>
-</div>
+<!-- Hero -->
+<section class="hero-section">
+    <div class="hero-text">
+        <h1>Industrial Knowledge <span class="accent-text">& Competency</span> Engine</h1>
+        <p>Offline mapping of theory, skills, operations, and workstations. Zero internet. Zero cloud.</p>
+    </div>
+    <div class="hero-badge-row">
+        <span class="hero-badge">🔒 Air-Gapped</span>
+        <span class="hero-badge">⚡ FTS5 Search</span>
+        <span class="hero-badge">🧠 TF-IDF Mapping</span>
+        <span class="hero-badge">🏭 Industry 4.0</span>
+    </div>
+</section>
 
-{% if query %}
-    <div class="results-section fade-in">
-        <h2>Search Results for "{{ query }}"</h2>
-        {% if search_results %}
-            <div class="grid-container">
-            {% for res in search_results %}
-                <div class="card result-card">
-                    <div class="card-badge">{{ res.entity_type }}</div>
-                    <h3>{{ res.title }}</h3>
-                    <p>{{ res.highlight | safe }}</p>
-                    <div class="card-footer">Rank Score: {{ res.rank | round(4) }}</div>
-                </div>
-            {% endfor %}
+<!-- System Stats -->
+<section class="stats-grid fade-in">
+    <div class="stat-card">
+        <div class="stat-icon">🏭</div>
+        <div class="stat-value">{{ stats.shops }}</div>
+        <div class="stat-label">Shops</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">🔧</div>
+        <div class="stat-value">{{ stats.stations }}</div>
+        <div class="stat-label">Stations</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">⚙️</div>
+        <div class="stat-value">{{ stats.processes }}</div>
+        <div class="stat-label">Processes</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">🎯</div>
+        <div class="stat-value">{{ stats.operations }}</div>
+        <div class="stat-label">Operations</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">💡</div>
+        <div class="stat-value">{{ stats.skills }}</div>
+        <div class="stat-label">Skills</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">🛠️</div>
+        <div class="stat-value">{{ stats.tools }}</div>
+        <div class="stat-label">Tools</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">📚</div>
+        <div class="stat-value">{{ stats.topics }}</div>
+        <div class="stat-label">Theory Topics</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">🗺️</div>
+        <div class="stat-value">{{ stats.mappings }}</div>
+        <div class="stat-label">Competency Maps</div>
+    </div>
+</section>
+
+<!-- Quick Search -->
+<section class="quick-search-section fade-in">
+    <form action="{{ url_for('search') }}" method="GET" class="search-form" id="main-search-form">
+        <input type="text" name="q" id="search-input" placeholder="Search stations, processes, skills, theory topics..." class="search-input" autocomplete="off">
+        <button type="submit" class="primary-btn" id="search-btn">Search</button>
+    </form>
+</section>
+
+<!-- Competency Dashboard -->
+<section class="dashboard-section fade-in">
+    <div class="section-header">
+        <h2>Station Competency Readiness</h2>
+        <a href="{{ url_for('graph') }}" class="secondary-btn">View Knowledge Graph →</a>
+    </div>
+
+    {% if competency_summary %}
+    <div class="competency-grid">
+        {% for stn in competency_summary %}
+        <a href="{{ url_for('station_detail', station_id=stn.station_id) }}" class="competency-card" id="stn-card-{{ stn.station_id }}">
+            <div class="comp-card-header">
+                <span class="entity-badge badge-station">STATION</span>
+                <span class="comp-shop">{{ stn.shop }}</span>
             </div>
-        {% else %}
-            <p class="empty-state">No results found in offline index.</p>
-        {% endif %}
+            <div class="comp-card-code">{{ stn.station_code }}</div>
+            <div class="comp-card-name">{{ stn.station_name }}</div>
+            <div class="readiness-bar-wrap">
+                <div class="readiness-bar-bg">
+                    <div class="readiness-bar-fill
+                        {% if stn.readiness_pct >= 75 %}bar-good
+                        {% elif stn.readiness_pct >= 40 %}bar-mid
+                        {% else %}bar-low{% endif %}"
+                        style="width: {{ stn.readiness_pct }}%">
+                    </div>
+                </div>
+                <span class="readiness-pct">{{ stn.readiness_pct }}%</span>
+            </div>
+            <div class="comp-card-meta">{{ stn.covered }}/{{ stn.total_skills }} skills covered</div>
+        </a>
+        {% endfor %}
     </div>
-{% else %}
-    <div class="dashboard-section fade-in">
-        <h2>Top Heuristic Mappings</h2>
-        {% if mappings %}
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Trade</th>
-                        <th>Mapped Workstation</th>
-                        <th>Relevance Score (TF-IDF)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for score, trade_name, ws_code in mappings %}
-                    <tr>
-                        <td>{{ trade_name }}</td>
-                        <td>{{ ws_code }}</td>
-                        <td>
-                            <div class="score-bar-container">
-                                <div class="score-bar" style="width: {{ (score * 100) | round }}%"></div>
-                            </div>
-                            <span class="score-text">{{ score | round(4) }}</span>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% else %}
-            <p class="empty-state">No mappings computed yet. Use Admin panel to ingest CSVs.</p>
-        {% endif %}
+    {% else %}
+    <div class="empty-state">
+        <p>🏭 No station data yet.</p>
+        <p>Upload <code>complete_trim_station_data.xlsx</code> and <code>TCF_1.xlsx</code> via the <a href="{{ url_for('admin') }}">Admin Panel</a>.</p>
     </div>
-{% endif %}
+    {% endif %}
+</section>
 {% endblock %}

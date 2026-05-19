@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Station — {{ profile.station_code }}{% endblock %}
+
+{% block content %}
+<div class="station-header fade-in">
+    <div class="station-meta">
+        <span class="entity-badge badge-station">STATION</span>
+        <span class="station-shop">{{ profile.shop }}</span>
+    </div>
+    <h1>{{ profile.station_code }}</h1>
+    <p>{{ profile.station_name }}</p>
+</div>
+
+<!-- Readiness Banner -->
+{% set r = profile.readiness %}
+<div class="readiness-banner fade-in {% if r.readiness_pct >= 75 %}banner-good{% elif r.readiness_pct >= 40 %}banner-mid{% else %}banner-low{% endif %}">
+    <div class="readiness-score-big">{{ r.readiness_pct }}%</div>
+    <div class="readiness-info">
+        <strong>Theory Coverage Readiness</strong>
+        <p>{{ r.covered_skills }} of {{ r.total_skills }} required skills covered by theory modules.</p>
+    </div>
+</div>
+
+<div class="station-layout">
+    <!-- Left: Processes & Operations -->
+    <div class="station-main">
+        <h2>Processes & Operations</h2>
+        {% if profile.processes %}
+        {% for proc in profile.processes %}
+        <div class="process-card card fade-in" id="proc-{{ loop.index }}">
+            <div class="process-header">
+                <span class="entity-badge badge-process">PROCESS</span>
+                <strong>{{ proc.name }}</strong>
+                <code class="code-tag">{{ proc.process_code }}</code>
+            </div>
+            {% if proc.operations %}
+            <div class="operations-list">
+                {% for op in proc.operations %}
+                <div class="operation-row">
+                    <div class="op-name">{{ op.name }}</div>
+                    {% if op.operation_summary %}
+                    <div class="op-summary">{{ op.operation_summary }}</div>
+                    {% endif %}
+                    {% if op.skills %}
+                    <div class="op-skills">
+                        {% for s in op.skills %}
+                        <span class="skill-tag">{{ s }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="empty-state">No processes defined for this station.</div>
+        {% endif %}
+
+        <!-- Tools -->
+        {% if profile.tools %}
+        <h2 style="margin-top:2rem">Tools & Equipment</h2>
+        <div class="tools-grid">
+            {% for tool in profile.tools %}
+            <div class="tool-chip">
+                <span class="entity-badge badge-tool">TOOL</span>
+                {{ tool.name }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Right: Competency Sidebar -->
+    <aside class="station-sidebar">
+        <!-- Covered Topics -->
+        {% if r.covered_topics %}
+        <div class="sidebar-section">
+            <h3>✅ Covered Theory Topics</h3>
+            {% for t in r.covered_topics %}
+            <div class="topic-item">
+                <div class="topic-title">{{ t.topic_title }}</div>
+                <div class="topic-coverage-bar">
+                    <div class="coverage-fill" style="width:{{ t.coverage }}%"></div>
+                </div>
+                <div class="topic-pct">{{ t.coverage }}%</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Missing Skills -->
+        {% if r.missing_skills %}
+        <div class="sidebar-section">
+            <h3>⚠️ Missing Competencies</h3>
+            {% for s in r.missing_skills %}
+            <div class="missing-skill">
+                <span class="skill-tag tag-missing">{{ s.skill_name }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="sidebar-section">
+            <a href="{{ url_for('graph') }}" class="secondary-btn" style="width:100%;text-align:center;">
+                View in Knowledge Graph →
+            </a>
+        </div>
+    </aside>
+</div>
+
+<div style="margin-top:2rem">
+    <a href="{{ url_for('index') }}" class="secondary-btn">← Back to Dashboard</a>
+</div>
+{% endblock %}
