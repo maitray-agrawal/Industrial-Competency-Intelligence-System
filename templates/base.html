@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Mapping Engine</title>
+    <!-- 100% Offline Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Load custom fonts from Google optionally, but fallback to local sans-serif for air-gapped -->
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">INDUSTRIAL KNOWLEDGE ENGINE</div>
+        <div class="nav-links">
+            <a href="{{ url_for('index') }}" class="nav-btn">Dashboard</a>
+            <a href="{{ url_for('admin') }}" class="nav-btn">Admin Panel</a>
+        </div>
+    </nav>
+    
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+industrial_knowledge.sqlite
+system.log
+uploads/
+.DS_Store

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero-section">
+    <h1>Competency Integration</h1>
+    <p>Secure offline retrieval and heuristic mapping.</p>
+    
+    <form action="{{ url_for('search') }}" method="GET" class="search-form">
+        <input type="text" name="q" placeholder="Search workstation processes, tools, skills..." value="{{ query or '' }}" class="search-input">
+        <button type="submit" class="primary-btn">Search FTS5</button>
+    </form>
+</div>
+
+{% if query %}
+    <div class="results-section fade-in">
+        <h2>Search Results for "{{ query }}"</h2>
+        {% if search_results %}
+            <div class="grid-container">
+            {% for res in search_results %}
+                <div class="card result-card">
+                    <div class="card-badge">{{ res.entity_type }}</div>
+                    <h3>{{ res.title }}</h3>
+                    <p>{{ res.highlight | safe }}</p>
+                    <div class="card-footer">Rank Score: {{ res.rank | round(4) }}</div>
+                </div>
+            {% endfor %}
+            </div>
+        {% else %}
+            <p class="empty-state">No results found in offline index.</p>
+        {% endif %}
+    </div>
+{% else %}
+    <div class="dashboard-section fade-in">
+        <h2>Top Heuristic Mappings</h2>
+        {% if mappings %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Trade</th>
+                        <th>Mapped Workstation</th>
+                        <th>Relevance Score (TF-IDF)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for score, trade_name, ws_code in mappings %}
+                    <tr>
+                        <td>{{ trade_name }}</td>
+                        <td>{{ ws_code }}</td>
+                        <td>
+                            <div class="score-bar-container">
+                                <div class="score-bar" style="width: {{ (score * 100) | round }}%"></div>
+                            </div>
+                            <span class="score-text">{{ score | round(4) }}</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="empty-state">No mappings computed yet. Use Admin panel to ingest CSVs.</p>
+        {% endif %}
+    </div>
+{% endif %}
+{% endblock %}
