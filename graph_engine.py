@@ -403,6 +403,114 @@ class GraphRelationshipEngine:
         return {"nodes": nodes, "edges": edges}
 
     @staticmethod
+    def resolve_industrial_context(session, ent) -> dict:
+        """
+        Traverses the unified graph (depth <= 4) to find the primary associated 
+        Station, Process, Shop, and Tools for any GraphEntity.
+        """
+        context = {
+            "shop": "Trim Line Shop",
+            "station": None,
+            "process": None,
+            "tools": []
+        }
+        
+        def get_neighbors_by_type(node_id, types):
+            rels = session.query(GraphRelationship).filter(
+                (GraphRelationship.source_id == node_id) | (GraphRelationship.target_id == node_id)
+            ).all()
+            results = []
+            for r in rels:
+                neighbor = r.target if r.source_id == node_id else r.source
+                if neighbor and neighbor.entity_type.lower() in types:
+                    results.append(neighbor)
+            return results
+
+        # Simple BFS up to depth 4 to locate nearest station & process
+        queue = [(ent, 0)]
+        visited = {ent.id}
+        nearest_station = None
+        nearest_process = None
+        
+        while queue:
+            curr, depth = queue.pop(0)
+            
+            if curr.entity_type.lower() == "station" and not nearest_station:
+                nearest_station = curr
+            if curr.entity_type.lower() == "process" and not nearest_process:
+                nearest_process = curr
+                
+            if nearest_station and nearest_process:
+                break
+                
+            if depth < 4:
+                rels = session.query(GraphRelationship).filter(
+                    (GraphRelationship.source_id == curr.id) | (GraphRelationship.target_id == curr.id)
+                ).all()
+                for r in rels:
+                    neighbor = r.target if r.source_id == curr.id else r.source
+                    if neighbor and neighbor.id not in visited:
+                        visited.add(neighbor.id)
+                        queue.append((neighbor, depth + 1))
+                        
+        if nearest_station:
+            context["station"] = {
+                "id": nearest_station.id,
+                "name": nearest_station.name,
+                "code": nearest_station.code
+            }
+            if nearest_station.properties and isinstance(nearest_station.properties, dict):
+                shop_val = nearest_station.properties.get("shop") or nearest_station.properties.get("shop_code")
+                if shop_val:
+                    context["shop"] = shop_val
+                    
+            station_tools = get_neighbors_by_type(nearest_station.id, ["tool"])
+            for tool in station_tools:
+                context["tools"].append({
+                    "id": tool.id,
+                    "name": tool.name,
+                    "code": tool.code
+                })
+                
+        if nearest_process:
+            context["process"] = {
+                "id": nearest_process.id,
+                "name": nearest_process.name,
+                "code": nearest_process.code
+            }
+        else:
+            if nearest_station:
+                st_processes = get_neighbors_by_type(nearest_station.id, ["process"])
+                if st_processes:
+                    context["process"] = {
+                        "id": st_processes[0].id,
+                        "name": st_processes[0].name,
+                        "code": st_processes[0].code
+                    }
+                    
+        if not context["tools"]:
+            direct_tools = get_neighbors_by_type(ent.id, ["tool"])
+            for tool in direct_tools:
+                context["tools"].append({
+                    "id": tool.id,
+                    "name": tool.name,
+                    "code": tool.code
+                })
+
+        seen_tool_ids = set()
+        unique_tools = []
+        for t in context["tools"]:
+            if t["id"] not in seen_tool_ids:
+                seen_tool_ids.add(t["id"])
+                unique_tools.append(t)
+        context["tools"] = unique_tools
+        
+        if not context["shop"]:
+            context["shop"] = "Trim Line Shop"
+            
+        return context
+
+    @staticmethod
     def get_expanded_card_details(entity_type: str, entity_id: int) -> dict:
         """
         Returns full detailed profile of any node and all direct or 2-hop connected details,
@@ -466,7 +574,8 @@ class GraphRelationshipEngine:
                 "diplomas": [],
                 "dependencies": [],
                 "learning_modules": [],
-                "relevance_score": 1.0
+                "relevance_score": 1.0,
+                "industrial_context": GraphRelationshipEngine.resolve_industrial_context(session, ent)
             }
 
             # 2. Get directly connected neighbors

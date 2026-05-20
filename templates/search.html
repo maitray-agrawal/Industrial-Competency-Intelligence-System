@@ -141,6 +141,16 @@
     .pill-badge.tool-badge { border-color: var(--red); color: var(--red); }
     .pill-badge.subject-badge { border-color: var(--purple); color: var(--purple); }
 
+    .clickable-badge {
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .clickable-badge:hover {
+        transform: scale(1.05);
+        filter: brightness(1.2);
+        box-shadow: 0 0 8px currentColor;
+    }
+
     .dependency-item {
         font-size: 0.8rem;
         padding: 0.5rem;
@@ -148,6 +158,168 @@
         background: rgba(255,255,255,0.01);
         border-left: 3px solid var(--accent);
         margin-bottom: 0.3rem;
+    }
+
+    /* ── Inline Industrial Context Block ─────────────────────── */
+    .card-industrial-context {
+        margin-top: 1rem;
+        background: rgba(245, 158, 11, 0.04);
+        border: 1px solid rgba(245, 158, 11, 0.18);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .card-ind-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.45rem 0.9rem;
+        background: rgba(245, 158, 11, 0.09);
+        border-bottom: 1px solid rgba(245, 158, 11, 0.12);
+    }
+
+    .card-ind-header span {
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--amber);
+    }
+
+    .card-ind-icon {
+        font-size: 0.85rem;
+    }
+
+    .card-ind-body {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0;
+        padding: 0.6rem 0.9rem;
+        row-gap: 0.5rem;
+    }
+
+    .card-ind-row {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+
+    .card-ind-row.full-width {
+        grid-column: 1 / -1;
+    }
+
+    .card-ind-label {
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+    }
+
+    .card-ind-value {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--text-main);
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .card-ind-tools-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+        margin-top: 0.15rem;
+    }
+
+    .card-ind-tool-badge {
+        font-size: 0.68rem;
+        font-weight: 700;
+        padding: 0.18rem 0.5rem;
+        border-radius: 4px;
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.35);
+        color: #fca5a5;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .card-ind-tool-badge:hover {
+        background: rgba(239, 68, 68, 0.22);
+        box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+        transform: translateY(-1px);
+    }
+
+    .card-ind-station-badge {
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        background: rgba(6, 182, 212, 0.1);
+        border: 1px solid rgba(6, 182, 212, 0.35);
+        color: var(--cyan);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        display: inline-block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .card-ind-station-badge:hover {
+        background: rgba(6, 182, 212, 0.2);
+        box-shadow: 0 0 6px rgba(6, 182, 212, 0.4);
+    }
+
+    .card-ind-process-badge {
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid rgba(16, 185, 129, 0.35);
+        color: var(--green);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        display: inline-block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .card-ind-process-badge:hover {
+        background: rgba(16, 185, 129, 0.2);
+        box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+    }
+
+    .card-ind-shop-badge {
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        color: #93c5fd;
+        display: inline-block;
+    }
+
+    /* shimmer while loading */
+    @keyframes shimmer {
+        0%   { background-position: -400px 0; }
+        100% { background-position: 400px 0; }
+    }
+    .ind-loading-shimmer {
+        height: 14px;
+        border-radius: 4px;
+        background: linear-gradient(90deg,
+            rgba(255,255,255,0.03) 25%,
+            rgba(255,255,255,0.07) 50%,
+            rgba(255,255,255,0.03) 75%);
+        background-size: 800px 100%;
+        animation: shimmer 1.4s infinite linear;
     }
 
     .results-workspace-title {
@@ -211,19 +383,54 @@
         <h3 style="margin-bottom: 0.5rem; font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase; text-align: center;">Direct Matches</h3>
         {% if results %}
             {% for res in results %}
-            <div class="interactive-card" onclick="openDetails('{{ res.entity_type }}', {{ res.entity_id }}, this)">
+            <div class="interactive-card"
+                 id="card-{{ res.entity_type | lower }}-{{ res.entity_id }}"
+                 data-entity-type="{{ res.entity_type }}"
+                 data-entity-id="{{ res.entity_id }}"
+                 onclick="openDetails('{{ res.entity_type }}', {{ res.entity_id }}, this)">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
                     <div class="entity-badge badge-{{ res.entity_type | lower }}" style="margin-bottom: 0.4rem;">
                         {{ res.entity_type }}
                     </div>
+                    <span style="font-size: 0.7rem; color: var(--text-dim); padding-top: 0.1rem;">#{{ res.entity_id }}</span>
                 </div>
                 <h3 style="font-size: 1.2rem; font-weight: 700; margin-top: 0.2rem;">{{ res.title }}</h3>
                 <p style="font-size: 0.9rem; margin-top: 0.4rem;" class="result-highlight">{{ res.highlight | safe }}</p>
+
+                <!-- Inline Industrial Context Preview (populated by JS) -->
+                <div class="card-industrial-context" id="ind-ctx-{{ res.entity_type | lower }}-{{ res.entity_id }}">
+                    <div class="card-ind-header">
+                        <span class="card-ind-icon">🏭</span>
+                        <span>Industrial Context</span>
+                    </div>
+                    <div class="card-ind-body" id="ind-body-{{ res.entity_type | lower }}-{{ res.entity_id }}">
+                        <!-- shimmer placeholder while loading -->
+                        <div class="card-ind-row">
+                            <div class="ind-loading-shimmer" style="width: 40px; margin-bottom: 2px;"></div>
+                            <div class="ind-loading-shimmer" style="width: 90px;"></div>
+                        </div>
+                        <div class="card-ind-row">
+                            <div class="ind-loading-shimmer" style="width: 50px; margin-bottom: 2px;"></div>
+                            <div class="ind-loading-shimmer" style="width: 110px;"></div>
+                        </div>
+                        <div class="card-ind-row full-width">
+                            <div class="ind-loading-shimmer" style="width: 60px; margin-bottom: 2px;"></div>
+                            <div class="ind-loading-shimmer" style="width: 160px;"></div>
+                        </div>
+                        <div class="card-ind-row full-width">
+                            <div class="ind-loading-shimmer" style="width: 80px; margin-bottom: 2px;"></div>
+                            <div class="ind-loading-shimmer" style="width: 200px;"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card-meta-row">
-                    <span style="color: var(--text-dim)">ID: #{{ res.entity_id }}</span>
                     {% if res.rank is not none and res.rank != 0 %}
-                    <span style="color: var(--cyan)">Relevance: {{ res.rank | round(3) }}</span>
+                    <span style="color: var(--cyan); font-size: 0.75rem;">⚡ Relevance: {{ res.rank | round(3) }}</span>
+                    {% else %}
+                    <span></span>
                     {% endif %}
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">Click to explore →</span>
                 </div>
             </div>
             {% endfor %}
@@ -253,6 +460,54 @@
     </div>
 
     <div id="sidebar-content" style="display: flex; flex-direction: column; gap: 1.2rem;">
+        <!-- Industrial Context Section (Drawer) -->
+        <div id="side-sec-industrial-context" style="display: none;
+             background: rgba(245,158,11,0.04);
+             border: 1px solid rgba(245,158,11,0.2);
+             border-radius: var(--radius);
+             overflow: hidden;">
+            <!-- Amber header bar -->
+            <div style="display: flex; align-items: center; gap: 0.6rem;
+                        padding: 0.65rem 1.1rem;
+                        background: rgba(245,158,11,0.1);
+                        border-bottom: 1px solid rgba(245,158,11,0.15);">
+                <span style="font-size: 1rem;">🏭</span>
+                <span style="font-size: 0.75rem; font-weight: 800; letter-spacing: 0.1em;
+                             text-transform: uppercase; color: var(--amber);">Industrial Context</span>
+            </div>
+            <!-- Rows -->
+            <div style="display: flex; flex-direction: column; gap: 0; padding: 0.8rem 1.1rem;">
+                <!-- Plant / Shop -->
+                <div style="display: flex; justify-content: space-between; align-items: center;
+                            padding: 0.55rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                    <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+                                 letter-spacing: 0.07em; color: var(--text-muted);">Plant / Shop</span>
+                    <span id="side-ind-shop" class="pill-badge badge-shop" style="font-weight: 700; font-size: 0.72rem;">Trim Line Shop</span>
+                </div>
+                <!-- Station -->
+                <div style="display: flex; justify-content: space-between; align-items: center;
+                            padding: 0.55rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                    <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+                                 letter-spacing: 0.07em; color: var(--text-muted);">Station</span>
+                    <span id="side-ind-station-wrap"></span>
+                </div>
+                <!-- Process -->
+                <div style="display: flex; justify-content: space-between; align-items: center;
+                            padding: 0.55rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                    <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+                                 letter-spacing: 0.07em; color: var(--text-muted);">Process</span>
+                    <span id="side-ind-process-wrap" style="max-width: 220px; text-align: right;"></span>
+                </div>
+                <!-- Tools -->
+                <div style="padding: 0.55rem 0;">
+                    <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+                                 letter-spacing: 0.07em; color: var(--text-muted); display: block;
+                                 margin-bottom: 0.45rem;">Tools / Equipment</span>
+                    <div id="side-ind-tools-wrap" class="badge-list"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Properties / Summary -->
         <div class="sidebar-section" id="side-sec-summary">
             <h4>Description &amp; Metadata</h4>
@@ -322,6 +577,38 @@
                 document.getElementById("side-badge").textContent = data.type.toUpperCase();
                 document.getElementById("side-badge").className = `entity-badge badge-${data.type.toLowerCase()}`;
                 document.getElementById("side-code").textContent = data.code;
+
+                // Industrial Context Mapping
+                const ctx = data.industrial_context || {};
+                document.getElementById("side-ind-shop").textContent = ctx.shop || "Trim Line Shop";
+                
+                const stWrap = document.getElementById("side-ind-station-wrap");
+                stWrap.innerHTML = "";
+                if (ctx.station) {
+                    stWrap.innerHTML = `<span class="pill-badge station-badge clickable-badge" onclick="openDetails('STATION', ${ctx.station.id})" title="Click to view station details">${ctx.station.name}</span>`;
+                } else {
+                    stWrap.innerHTML = `<span class="pill-badge" style="border-color: var(--border); color: var(--text-muted);">Not Mapped</span>`;
+                }
+                
+                const prWrap = document.getElementById("side-ind-process-wrap");
+                prWrap.innerHTML = "";
+                if (ctx.process) {
+                    prWrap.innerHTML = `<span class="pill-badge process-badge clickable-badge" onclick="openDetails('PROCESS', ${ctx.process.id})" title="Click to view process details">${ctx.process.name}</span>`;
+                } else {
+                    prWrap.innerHTML = `<span class="pill-badge" style="border-color: var(--border); color: var(--text-muted);">Not Mapped</span>`;
+                }
+                
+                const tlWrap = document.getElementById("side-ind-tools-wrap");
+                tlWrap.innerHTML = "";
+                if (ctx.tools && ctx.tools.length > 0) {
+                    ctx.tools.forEach(tool => {
+                        tlWrap.innerHTML += `<span class="pill-badge tool-badge clickable-badge" onclick="openDetails('TOOL', ${tool.id})" title="Click to view tool details">${tool.name}</span>`;
+                    });
+                } else {
+                    tlWrap.innerHTML = `<span class="pill-badge" style="border-color: var(--border); color: var(--text-muted);">- No Mapped Tools -</span>`;
+                }
+                
+                document.getElementById("side-sec-industrial-context").style.display = "flex";
 
                 // Description section
                 const props = data.properties || {};
@@ -405,5 +692,89 @@
         document.getElementById("glass-sidebar").classList.remove("active");
         document.querySelectorAll(".interactive-card").forEach(c => c.classList.remove("selected"));
     }
+
+    // ── Lazy Industrial Context Prefetch for all visible cards ─────────────
+    function renderInlineContext(entityType, entityId, ctx) {
+        const bodyEl = document.getElementById(`ind-body-${entityType.toLowerCase()}-${entityId}`);
+        if (!bodyEl) return;
+
+        const shop     = ctx.shop || 'Trim Line Shop';
+        const station  = ctx.station;
+        const process  = ctx.process;
+        const tools    = ctx.tools || [];
+
+        const stBadge = station
+            ? `<span class="card-ind-station-badge clickable-badge"
+                     onclick="event.stopPropagation(); openDetails('STATION', ${station.id})"
+                     title="${station.code}">${station.name}</span>`
+            : `<span style="color: var(--text-muted); font-size: 0.72rem;">—</span>`;
+
+        const prBadge = process
+            ? `<span class="card-ind-process-badge clickable-badge"
+                     onclick="event.stopPropagation(); openDetails('PROCESS', ${process.id})"
+                     title="${process.code}">${process.name}</span>`
+            : `<span style="color: var(--text-muted); font-size: 0.72rem;">—</span>`;
+
+        const toolBadges = tools.length > 0
+            ? tools.slice(0, 5).map(t =>
+                `<span class="card-ind-tool-badge clickable-badge"
+                       onclick="event.stopPropagation(); openDetails('TOOL', ${t.id})"
+                       title="${t.code}">🔧 ${t.name}</span>`
+              ).join('') + (tools.length > 5 ? `<span class="card-ind-tool-badge" style="opacity:0.6;">+${tools.length - 5} more</span>` : '')
+            : `<span style="color: var(--text-muted); font-size: 0.7rem;">No mapped tools</span>`;
+
+        bodyEl.innerHTML = `
+            <div class="card-ind-row">
+                <div class="card-ind-label">Plant / Shop</div>
+                <div class="card-ind-value">
+                    <span class="card-ind-shop-badge">${shop}</span>
+                </div>
+            </div>
+            <div class="card-ind-row">
+                <div class="card-ind-label">Station</div>
+                <div class="card-ind-value">${stBadge}</div>
+            </div>
+            <div class="card-ind-row full-width">
+                <div class="card-ind-label">Process</div>
+                <div class="card-ind-value">${prBadge}</div>
+            </div>
+            <div class="card-ind-row full-width">
+                <div class="card-ind-label">Tools / Equipment</div>
+                <div class="card-ind-tools-row">${toolBadges}</div>
+            </div>
+        `;
+    }
+
+    // Sequentially fetch industrial context for each card after page render
+    document.addEventListener('DOMContentLoaded', function () {
+        const cards = document.querySelectorAll('.interactive-card[data-entity-type]');
+        if (!cards.length) return;
+
+        // Use a small delay between fetches to avoid hammering the server
+        const fetchQueue = Array.from(cards);
+        let idx = 0;
+
+        function fetchNext() {
+            if (idx >= fetchQueue.length) return;
+            const card = fetchQueue[idx++];
+            const etype = card.dataset.entityType;
+            const eid   = card.dataset.entityId;
+
+            fetch(`/api/entity-details/${etype.toLowerCase()}/${eid}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.industrial_context) {
+                        renderInlineContext(etype, eid, data.industrial_context);
+                    }
+                })
+                .catch(() => {
+                    const b = document.getElementById(`ind-body-${etype.toLowerCase()}-${eid}`);
+                    if (b) b.innerHTML = '<div style="color:var(--text-muted); font-size:0.72rem; padding:0.3rem;">Context unavailable</div>';
+                })
+                .finally(() => setTimeout(fetchNext, 80));  // 80ms spacing
+        }
+
+        setTimeout(fetchNext, 300); // brief delay after page paint
+    });
 </script>
 {% endblock %}
