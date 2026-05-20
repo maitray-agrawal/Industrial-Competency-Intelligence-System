@@ -17,7 +17,8 @@ from database import SessionLocal, engine, init_db
 from models import (
     Shop, Station, Process, Operation, Skill, Tool,
     Topic, Subtopic, StagingData, CompetencyMap,
-    SkillOperationMap, TopicSkillMap, ToolStationMap, UploadedFile
+    SkillOperationMap, TopicSkillMap, ToolStationMap, UploadedFile,
+    GraphEntity, GraphRelationship
 )
 from sqlalchemy import Integer as _SAInteger
 from search_engine import SearchAPI, SearchIndexer
@@ -161,7 +162,6 @@ def api_graph_data():
     """Return nodes and edges for the knowledge graph visualization."""
     nodes = []
     edges = []
-    node_id = 0
 
     # Colour palette per entity type
     COLOR = {
@@ -171,117 +171,30 @@ def api_graph_data():
         "operation": "#f59e0b",  # amber
         "skill":     "#f97316",  # orange
         "tool":      "#ef4444",  # red
-        "topic":     "#a855f7",  # purple
-        "subtopic":  "#ec4899",  # pink
+        "subject":   "#a855f7",  # purple
+        "topic":     "#ec4899",  # pink
+        "semester":  "#64748b",  # slate
+        "diploma":   "#475569",  # slate-dark
     }
 
-    entity_node_map: dict[str, int] = {}  # "TYPE_id" → vis node id
-
-    def add_node(label: str, group: str, title: str) -> int:
-        nonlocal node_id
-        nid = node_id
-        nodes.append({
-            "id":    nid,
-            "label": label[:30],
-            "title": title,
-            "group": group,
-            "color": COLOR.get(group, "#94a3b8"),
-        })
-        node_id += 1
-        return nid
-
     with SessionLocal() as session:
-        # Shops
-        for obj in session.query(Shop).all():
-            key = f"shop_{obj.id}"
-            entity_node_map[key] = add_node(obj.shop_code, "shop", obj.name)
+        db_nodes = session.query(GraphEntity).all()
+        for ent in db_nodes:
+            nodes.append({
+                "id":    ent.id,
+                "label": ent.name[:30] + ("..." if len(ent.name) > 30 else ""),
+                "title": f"[{ent.entity_type.upper()}] {ent.name}",
+                "group": ent.entity_type.lower(),
+                "color": COLOR.get(ent.entity_type.lower(), "#94a3b8")
+            })
 
-        # Stations + edges to Shop
-        for obj in session.query(Station).all():
-            key = f"station_{obj.id}"
-            nid = add_node(obj.station_code, "station", obj.name)
-            entity_node_map[key] = nid
-            shop_key = f"shop_{obj.shop_id}"
-            if shop_key in entity_node_map:
-                edges.append({
-                    "from": entity_node_map[shop_key],
-                    "to":   nid,
-                    "label": "has_station",
-                })
-
-        # Processes → Station
-        for obj in session.query(Process).all():
-            key = f"process_{obj.id}"
-            nid = add_node(obj.name[:20], "process", obj.name)
-            entity_node_map[key] = nid
-            stn_key = f"station_{obj.station_id}"
-            if stn_key in entity_node_map:
-                edges.append({
-                    "from": entity_node_map[stn_key],
-                    "to":   nid,
-                    "label": "has_process",
-                })
-
-        # Operations → Process
-        for obj in session.query(Operation).limit(200).all():  # cap for performance
-            key = f"op_{obj.id}"
-            nid = add_node(obj.name[:20], "operation", obj.name)
-            entity_node_map[key] = nid
-            proc_key = f"process_{obj.process_id}"
-            if proc_key in entity_node_map:
-                edges.append({
-                    "from": entity_node_map[proc_key],
-                    "to":   nid,
-                    "label": "has_operation",
-                })
-
-        # Skills
-        for obj in session.query(Skill).all():
-            key = f"skill_{obj.id}"
-            entity_node_map[key] = add_node(obj.name[:20], "skill", obj.name)
-
-        # Skill ↔ Operation edges
-        for link in session.query(SkillOperationMap).all():
-            sk_key = f"skill_{link.skill_id}"
-            op_key = f"op_{link.operation_id}"
-            if sk_key in entity_node_map and op_key in entity_node_map:
-                edges.append({
-                    "from":  entity_node_map[sk_key],
-                    "to":    entity_node_map[op_key],
-                    "label": f"requires ({round(link.confidence, 2)})",
-                    "dashes": True,
-                })
-
-        # Tools
-        for link in session.query(ToolStationMap).all():
-            tool = session.get(Tool, link.tool_id)
-            stn_key = f"station_{link.station_id}"
-            if tool and stn_key in entity_node_map:
-                tool_key = f"tool_{tool.id}"
-                if tool_key not in entity_node_map:
-                    entity_node_map[tool_key] = add_node(tool.name[:20], "tool", tool.name)
-                edges.append({
-                    "from":  entity_node_map[stn_key],
-                    "to":    entity_node_map[tool_key],
-                    "label": "uses_tool",
-                })
-
-        # Topics
-        for obj in session.query(Topic).all():
-            key = f"topic_{obj.id}"
-            entity_node_map[key] = add_node(obj.title[:20], "topic", obj.title)
-
-        # Topic ↔ Skill edges
-        for link in session.query(TopicSkillMap).all():
-            t_key = f"topic_{link.topic_id}"
-            s_key = f"skill_{link.skill_id}"
-            if t_key in entity_node_map and s_key in entity_node_map:
-                edges.append({
-                    "from":  entity_node_map[t_key],
-                    "to":    entity_node_map[s_key],
-                    "label": f"covers ({round(link.confidence, 2)})",
-                    "color": "#a855f7",
-                })
+        db_relationships = session.query(GraphRelationship).all()
+        for rel in db_relationships:
+            edges.append({
+                "from":  rel.source_id,
+                "to":    rel.target_id,
+                "label": f"{rel.rel_type} ({round(rel.weight, 2)})"
+            })
 
     return jsonify({"nodes": nodes, "edges": edges})
 
