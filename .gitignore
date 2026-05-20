@@ -1,8 +1,52 @@
+# ==============================================================================
+# IIK-CME .gitignore - Production & Offline Security Configuration
+# ==============================================================================
+
+# Virtual Environment / Local Interpreter
 venv/
+.venv/
+env/
+ENV/
+*.venv
+
+# Python Bytecode and Cache Directories
 __pycache__/
 *.pyc
-*.sqlite*
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Databases (Prevent committing local/bloated SQLite databases)
+*.sqlite
+*.sqlite3
+*.db
+*.db3
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+
+# Logging and System Traces
+*.log
 system.log
-uploads/
+system.log.*
+*.trace
+
+# Uploads Temp / Processing Cache
+uploads/*
+!uploads/.gitkeep
 scratch/
+
+# IDEs & System Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*~
 .DS_Store
+Thumbs.db

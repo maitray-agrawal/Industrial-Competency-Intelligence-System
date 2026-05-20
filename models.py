@@ -68,18 +68,22 @@ class Station(Base):
     __tablename__ = "stations"
 
     id             = Column(Integer, primary_key=True, index=True)
-    station_code   = Column(String(32), unique=True, nullable=False, index=True)
-    name           = Column(String(256), nullable=False)
+    station_code   = Column(String(64), unique=True, nullable=False, index=True)
+    raw_station_id = Column(String(128), nullable=True, index=True)   # original Excel value e.g. TCF_2_STN_7
+    name           = Column(String(256), nullable=False)               # display name = raw_station_id
     shop_id        = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False)
     created_at     = Column(DateTime, server_default=func.now())
 
     # Relationships
-    shop       = relationship("Shop", back_populates="stations")
-    processes  = relationship("Process", back_populates="station", cascade="all, delete-orphan")
-    tool_links = relationship("ToolStationMap", back_populates="station", cascade="all, delete-orphan")
+    shop            = relationship("Shop", back_populates="stations")
+    processes       = relationship("Process", back_populates="station", cascade="all, delete-orphan")
+    tool_links      = relationship("ToolStationMap", back_populates="station", cascade="all, delete-orphan")
+    skill_links     = relationship("SkillStationMap", back_populates="station", cascade="all, delete-orphan")
+    operation_links = relationship("StationOperationMap", back_populates="station", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_station_shop", "shop_id"),
+        Index("ix_station_raw_id", "raw_station_id"),
     )
 
 
@@ -117,6 +121,7 @@ class Operation(Base):
     # Relationships
     process      = relationship("Process", back_populates="operations")
     skill_links  = relationship("SkillOperationMap", back_populates="operation", cascade="all, delete-orphan")
+    station_links = relationship("StationOperationMap", back_populates="operation", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_operation_process", "process_id"),
@@ -138,6 +143,7 @@ class Skill(Base):
     operation_links  = relationship("SkillOperationMap", back_populates="skill", cascade="all, delete-orphan")
     topic_links      = relationship("TopicSkillMap", back_populates="skill", cascade="all, delete-orphan")
     competency_links = relationship("CompetencyMap", back_populates="skill", cascade="all, delete-orphan")
+    station_links    = relationship("SkillStationMap", back_populates="skill", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_skill_part", "skill_part"),
@@ -274,6 +280,46 @@ class ToolStationMap(Base):
 
     __table_args__ = (
         UniqueConstraint("tool_id", "station_id", name="uq_tool_station"),
+    )
+
+
+class SkillStationMap(Base):
+    """M:M — Skills ↔ Stations (direct map, bypasses operation/process chain)."""
+    __tablename__ = "skill_station_map"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    skill_id   = Column(Integer, ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    station_id = Column(Integer, ForeignKey("stations.id", ondelete="CASCADE"), nullable=False)
+    confidence = Column(Float, default=1.0, nullable=False)
+    method     = Column(String(32), default="etl", nullable=False)  # etl | inferred
+    created_at = Column(DateTime, server_default=func.now())
+
+    # Relationships
+    skill   = relationship("Skill", back_populates="station_links")
+    station = relationship("Station", back_populates="skill_links")
+
+    __table_args__ = (
+        UniqueConstraint("skill_id", "station_id", name="uq_skill_station"),
+        Index("ix_skill_station_station", "station_id"),
+    )
+
+
+class StationOperationMap(Base):
+    """M:M — Stations ↔ Operations (direct shortcut link)."""
+    __tablename__ = "station_operation_map"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    station_id   = Column(Integer, ForeignKey("stations.id", ondelete="CASCADE"), nullable=False)
+    operation_id = Column(Integer, ForeignKey("operations.id", ondelete="CASCADE"), nullable=False)
+    created_at   = Column(DateTime, server_default=func.now())
+
+    # Relationships
+    station   = relationship("Station", back_populates="operation_links")
+    operation = relationship("Operation", back_populates="station_links")
+
+    __table_args__ = (
+        UniqueConstraint("station_id", "operation_id", name="uq_station_operation"),
+        Index("ix_station_operation_station", "station_id"),
     )
 
 

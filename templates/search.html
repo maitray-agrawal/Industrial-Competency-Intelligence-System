@@ -499,11 +499,27 @@
                     <span id="side-ind-process-wrap" style="max-width: 220px; text-align: right;"></span>
                 </div>
                 <!-- Tools -->
-                <div style="padding: 0.55rem 0;">
+                <div style="padding: 0.55rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
                     <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
                                  letter-spacing: 0.07em; color: var(--text-muted); display: block;
                                  margin-bottom: 0.45rem;">Tools / Equipment</span>
                     <div id="side-ind-tools-wrap" class="badge-list"></div>
+                </div>
+                <!-- Skills -->
+                <div style="padding: 0.55rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                    <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+                                 letter-spacing: 0.07em; color: var(--text-muted); display: block;
+                                 margin-bottom: 0.45rem;">Required Skills</span>
+                    <div id="side-ind-skills-wrap" class="badge-list"></div>
+                </div>
+                <!-- Operation Summary -->
+                <div style="padding: 0.55rem 0;" id="side-ind-op-row">
+                    <span style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+                                 letter-spacing: 0.07em; color: var(--text-muted); display: block;
+                                 margin-bottom: 0.45rem;">Operation Summary</span>
+                    <p id="side-ind-op-summary" style="font-size: 0.8rem; font-style: italic;
+                        color: var(--text-main); line-height: 1.5; margin: 0;
+                        border-left: 2px solid rgba(245,158,11,0.4); padding-left: 0.6rem;"></p>
                 </div>
             </div>
         </div>
@@ -602,12 +618,33 @@
                 tlWrap.innerHTML = "";
                 if (ctx.tools && ctx.tools.length > 0) {
                     ctx.tools.forEach(tool => {
-                        tlWrap.innerHTML += `<span class="pill-badge tool-badge clickable-badge" onclick="openDetails('TOOL', ${tool.id})" title="Click to view tool details">${tool.name}</span>`;
+                        tlWrap.innerHTML += `<span class="pill-badge tool-badge clickable-badge" onclick="openDetails('TOOL', ${tool.id})" title="Click to view tool details">🔧 ${tool.name}</span>`;
                     });
                 } else {
-                    tlWrap.innerHTML = `<span class="pill-badge" style="border-color: var(--border); color: var(--text-muted);">- No Mapped Tools -</span>`;
+                    tlWrap.innerHTML = `<span class="pill-badge" style="border-color: var(--border); color: var(--text-muted);">No Mapped Tools</span>`;
                 }
-                
+
+                // Skills
+                const skWrap = document.getElementById("side-ind-skills-wrap");
+                skWrap.innerHTML = "";
+                if (ctx.skills && ctx.skills.length > 0) {
+                    ctx.skills.forEach(sk => {
+                        skWrap.innerHTML += `<span class="pill-badge skill-badge clickable-badge" onclick="openDetails('SKILL', ${sk.id})" title="Click to view skill details">${sk.name}</span>`;
+                    });
+                } else {
+                    skWrap.innerHTML = `<span class="pill-badge" style="border-color: var(--border); color: var(--text-muted);">No Mapped Skills</span>`;
+                }
+
+                // Operation Summary
+                const opSumEl = document.getElementById("side-ind-op-summary");
+                const opRow   = document.getElementById("side-ind-op-row");
+                if (ctx.operation_summary) {
+                    opSumEl.textContent = ctx.operation_summary;
+                    opRow.style.display = "block";
+                } else {
+                    opRow.style.display = "none";
+                }
+
                 document.getElementById("side-sec-industrial-context").style.display = "flex";
 
                 // Description section
@@ -698,10 +735,11 @@
         const bodyEl = document.getElementById(`ind-body-${entityType.toLowerCase()}-${entityId}`);
         if (!bodyEl) return;
 
-        const shop     = ctx.shop || 'Trim Line Shop';
-        const station  = ctx.station;
-        const process  = ctx.process;
-        const tools    = ctx.tools || [];
+        const shop    = ctx.shop || 'Trim Line Shop';
+        const station = ctx.station;
+        const process = ctx.process;
+        const tools   = ctx.tools  || [];
+        const skills  = ctx.skills || [];
 
         const stBadge = station
             ? `<span class="card-ind-station-badge clickable-badge"
@@ -723,6 +761,17 @@
               ).join('') + (tools.length > 5 ? `<span class="card-ind-tool-badge" style="opacity:0.6;">+${tools.length - 5} more</span>` : '')
             : `<span style="color: var(--text-muted); font-size: 0.7rem;">No mapped tools</span>`;
 
+        const skillBadges = skills.length > 0
+            ? skills.slice(0, 4).map(s =>
+                `<span style="font-size:0.68rem; font-weight:700; padding:0.18rem 0.5rem;
+                              border-radius:4px; background:rgba(249,115,22,0.1);
+                              border:1px solid rgba(249,115,22,0.35); color:#fdba74;
+                              cursor:pointer; transition:all 0.15s ease;"
+                       onclick="event.stopPropagation(); openDetails('SKILL', ${s.id})"
+                       title="${s.code}">${s.name}</span>`
+              ).join('') + (skills.length > 4 ? `<span style="font-size:0.68rem; opacity:0.6; padding:0.18rem 0.4rem; border:1px solid rgba(255,255,255,0.1); border-radius:4px;">+${skills.length - 4} more</span>` : '')
+            : `<span style="color: var(--text-muted); font-size: 0.7rem;">No mapped skills</span>`;
+
         bodyEl.innerHTML = `
             <div class="card-ind-row">
                 <div class="card-ind-label">Plant / Shop</div>
@@ -741,6 +790,10 @@
             <div class="card-ind-row full-width">
                 <div class="card-ind-label">Tools / Equipment</div>
                 <div class="card-ind-tools-row">${toolBadges}</div>
+            </div>
+            <div class="card-ind-row full-width">
+                <div class="card-ind-label">Required Skills</div>
+                <div class="card-ind-tools-row">${skillBadges}</div>
             </div>
         `;
     }

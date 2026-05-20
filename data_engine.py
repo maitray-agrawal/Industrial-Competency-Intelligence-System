@@ -30,7 +30,7 @@ from models import (
     StagingData,
     Shop, Station, Process, Operation, Skill, Tool,
     Diploma, Semester, Topic, Subtopic,
-    SkillOperationMap, ToolStationMap,
+    SkillOperationMap, ToolStationMap, SkillStationMap, StationOperationMap,
 )
 
 logger = get_logger("DataEngine")
@@ -44,6 +44,49 @@ STATION_OPTIONAL_COLS = {"tools/equipment", "operation summary", "skill part"}
 TCF_REQUIRED_COLS = {"topic", "sub-topic"}
 TCF_OPTIONAL_COLS = {"diploma", "semester", "matched operation", "skill part"}
 
+# ---------------------------------------------------------------------------
+# Column alias map — maps any variant of a column name to its canonical name
+# Covers: plural forms, spacing around slashes, all-caps, abbreviated names
+# ---------------------------------------------------------------------------
+_COLUMN_ALIASES = {
+    # Station column aliases
+    "stations":          "station",
+    "station no":        "station",
+    "station number":    "station",
+    "station id":        "station",
+    "stn":               "station",
+    # Shop aliases
+    "shop name":         "shop",
+    "plant":             "shop",
+    "plant / shop":      "shop",
+    # Process aliases
+    "process name":      "process",
+    "process / operation": "process",
+    # Tools aliases (many spacing variants around /)
+    "tools / equipment": "tools/equipment",
+    "tools/equipment":   "tools/equipment",
+    "tools & equipment": "tools/equipment",
+    "tools and equipment": "tools/equipment",
+    "equipment":         "tools/equipment",
+    "tools":             "tools/equipment",
+    # Operation summary aliases
+    "operation summary": "operation summary",
+    "operation":         "operation summary",
+    "operation desc":    "operation summary",
+    "operation description": "operation summary",
+    # Skill part aliases
+    "skill part":        "skill part",
+    "skills":            "skill part",
+    "skill":             "skill part",
+    "competency":        "skill part",
+    # TCF aliases
+    "sub-topic":         "sub-topic",
+    "subtopic":          "sub-topic",
+    "sub topic":         "sub-topic",
+    "matched operation":     "matched operation",
+    "matched_operation":     "matched operation",
+}
+
 
 def _row_fingerprint(row: dict) -> str:
     """SHA-256 fingerprint of a normalised row dict for duplicate detection."""
@@ -53,8 +96,15 @@ def _row_fingerprint(row: dict) -> str:
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Lowercase column names and strip whitespace."""
-    df.columns = [c.strip().lower() for c in df.columns]
+    """
+    Lowercase and strip column names, then apply alias map so any variant
+    of the column name (e.g. 'STATIONS', 'TOOLS / EQUIPMENT') is resolved
+    to the canonical form ('station', 'tools/equipment') the ETL expects.
+    """
+    df.columns = [
+        _COLUMN_ALIASES.get(c.strip().lower(), c.strip().lower())
+        for c in df.columns
+    ]
     return df
 
 
@@ -136,8 +186,10 @@ class StationDataETL:
                     try:
                         # --- SHOP ---
                         raw_shop = raw.get("shop") or "UNKNOWN_SHOP"
+                        raw_shop = str(raw_shop).strip()
                         shop_code = TaxonomyNormalizer.normalize_code(raw_shop)
-                        shop_name = TaxonomyNormalizer.normalize(raw_shop)
+                        # Title-case display: 'TCF 2' → 'Tcf 2' (not 'trim chassis final 2')
+                        shop_name = TaxonomyNormalizer.preserve_industrial_code(raw_shop)
                         shop = session.query(Shop).filter_by(shop_code=shop_code).first()
                         if not shop:
                             shop = Shop(shop_code=shop_code, name=shop_name)
@@ -146,13 +198,25 @@ class StationDataETL:
                             stats["shops"] += 1
 
                         # --- STATION ---
-                        raw_stn = raw.get("station") or f"STN_{idx}"
-                        station_code = cls._make_code(shop_code, raw_stn)
-                        station_name = TaxonomyNormalizer.normalize(raw_stn)
+                        raw_stn = raw.get("station")
+                        if not raw_stn or not str(raw_stn).strip():
+                            logger.warning(f"Row {idx}: blank station value — skipping row.")
+                            staging.status = "SKIPPED"
+                            stats["skipped"] += 1
+                            continue
+
+                        raw_stn = str(raw_stn).strip()
+                        # Preserve the original Excel station ID (e.g. TCF_2_STN_7)
+                        # station_code = normalize_code(raw_stn)  — unique by itself, no shop prefix
+                        station_code = TaxonomyNormalizer.normalize_code(raw_stn)[:64]
+                        # Display name = raw value (NOT expanded English text)
+                        station_name = TaxonomyNormalizer.preserve_industrial_code(raw_stn)
+
                         station = session.query(Station).filter_by(station_code=station_code).first()
                         if not station:
                             station = Station(
                                 station_code=station_code,
+                                raw_station_id=raw_stn,
                                 name=station_name,
                                 shop_id=shop.id,
                             )
@@ -162,8 +226,12 @@ class StationDataETL:
 
                         # --- PROCESS ---
                         raw_proc = raw.get("process") or f"PROC_{idx}"
-                        process_code = cls._make_code(station_code, raw_proc)
-                        process_name = TaxonomyNormalizer.normalize(raw_proc)
+                        # Process code: station_code + process name (keeps it unique per station)
+                        process_code = cls._make_code(station_code, raw_proc)[:64]
+                        # Display name: title-case (not over-normalized English)
+                        process_name = TaxonomyNormalizer.title_case(raw_proc)
+                        if not process_name:
+                            process_name = raw_proc
                         process = session.query(Process).filter_by(process_code=process_code).first()
                         if not process:
                             process = Process(
@@ -195,13 +263,15 @@ class StationDataETL:
                         # --- SKILL (from skill part column) ---
                         if raw_skill_part:
                             skill_code = cls._make_code("SKILL", raw_skill_part)
-                            skill_name = TaxonomyNormalizer.normalize(raw_skill_part)
+                            skill_name = TaxonomyNormalizer.title_case(raw_skill_part)
+                            if not skill_name:
+                                skill_name = raw_skill_part
                             skill = session.query(Skill).filter_by(skill_code=skill_code).first()
                             if not skill:
                                 skill = Skill(
                                     skill_code=skill_code,
                                     name=skill_name,
-                                    skill_part=skill_name,
+                                    skill_part=TaxonomyNormalizer.normalize(raw_skill_part),
                                 )
                                 session.add(skill)
                                 session.flush()
@@ -219,13 +289,35 @@ class StationDataETL:
                                     method="keyword",
                                 ))
 
-                        # --- TOOLS (tools/equipment column — may be comma-separated) ---
+                            # Direct link: skill ↔ station (NEW — bypasses 4-hop chain)
+                            slink = session.query(SkillStationMap).filter_by(
+                                skill_id=skill.id, station_id=station.id
+                            ).first()
+                            if not slink:
+                                session.add(SkillStationMap(
+                                    skill_id=skill.id,
+                                    station_id=station.id,
+                                    confidence=1.0,
+                                    method="etl",
+                                ))
+
+                        # --- TOOLS (tools/equipment column — multi-delimiter aware) ---
                         raw_tools = raw.get("tools/equipment") or ""
                         if raw_tools:
-                            tool_names = [t.strip() for t in str(raw_tools).split(",") if t.strip()]
+                            # Split on ALL common delimiters: , / ; | and newlines
+                            tool_names = TaxonomyNormalizer.split_multi_delimited(str(raw_tools))
                             for tool_name_raw in tool_names:
-                                tool_code = cls._make_code("TOOL", tool_name_raw)
-                                tool_norm = TaxonomyNormalizer.normalize(tool_name_raw)
+                                if not tool_name_raw:
+                                    continue
+                                tool_code = TaxonomyNormalizer.normalize_code(
+                                    TaxonomyNormalizer.normalize(tool_name_raw)
+                                )[:64]
+                                if not tool_code:
+                                    continue
+                                # Title-case display name (not over-normalized)
+                                tool_norm = TaxonomyNormalizer.title_case(tool_name_raw)
+                                if not tool_norm:
+                                    tool_norm = tool_name_raw.strip()
                                 tool = session.query(Tool).filter_by(tool_code=tool_code).first()
                                 if not tool:
                                     tool = Tool(
@@ -245,6 +337,16 @@ class StationDataETL:
                                         tool_id=tool.id,
                                         station_id=station.id,
                                     ))
+
+                        # Direct link: station ↔ operation (NEW shortcut)
+                        oplink = session.query(StationOperationMap).filter_by(
+                            station_id=station.id, operation_id=operation.id
+                        ).first()
+                        if not oplink:
+                            session.add(StationOperationMap(
+                                station_id=station.id,
+                                operation_id=operation.id,
+                            ))
 
                         staging.status = "PROCESSED"
                         stats["staged"] += 1

@@ -195,3 +195,52 @@ class TaxonomyNormalizer:
         Used for duplicate detection during ingestion.
         """
         return cls.normalize(a) == cls.normalize(b)
+
+    @classmethod
+    def title_case(cls, text: Optional[str]) -> str:
+        """
+        Produce a clean, readable display name while preserving industrial meaning.
+        
+        - Strips leading/trailing whitespace
+        - Collapses internal whitespace
+        - Title-cases words (not full lowercase like normalize())
+        - Does NOT expand abbreviations (keeps 'TCF', 'STN', 'QR' intact)
+        
+        Use this for Tool names, Process names, Shop names — NOT station codes.
+        """
+        if not text or not isinstance(text, str):
+            return ""
+        text = unicodedata.normalize("NFKC", text).strip()
+        text = re.sub(r"\s+", " ", text)
+        return text.title()
+
+    @classmethod
+    def preserve_industrial_code(cls, code: Optional[str]) -> str:
+        """
+        Preserve an industrial identifier AS-IS for display purposes.
+        Strips surrounding whitespace and collapses internal spaces to underscores,
+        but does NOT expand abbreviations or change case.
+        
+        Use for station codes: 'TCF_2_STN_7' stays 'TCF_2_STN_7'.
+        """
+        if not code or not isinstance(code, str):
+            return ""
+        code = unicodedata.normalize("NFKC", code).strip()
+        code = re.sub(r"\s+", "_", code)   # spaces -> underscores
+        return code
+
+    @classmethod
+    def split_multi_delimited(cls, text: Optional[str]) -> list:
+        """
+        Split a string that uses any combination of delimiters: ,  /  ;  |  \n
+        Returns a list of non-empty stripped values.
+        
+        Handles industrial 'tools/equipment' columns where tools may be
+        written as: 'Torque Wrench, Robotic Arm / Alignment Sensor' etc.
+        """
+        if not text or not isinstance(text, str):
+            return []
+        # Replace all known delimiters with a canonical separator
+        text = re.sub(r"[,;|/\n]", "\x00", text)
+        parts = [p.strip() for p in text.split("\x00") if p.strip()]
+        return parts

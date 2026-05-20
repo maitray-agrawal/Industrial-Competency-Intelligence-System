@@ -15,6 +15,7 @@ from models import (
     Shop, Station, Process, Operation, Skill, Tool,
     Diploma, Semester, Topic, Subtopic,
     SkillOperationMap, ToolStationMap, TopicSkillMap, CompetencyMap,
+    SkillStationMap, StationOperationMap,
     GraphEntity, GraphRelationship, EntityType, MappingScore
 )
 from logger import get_logger
@@ -99,12 +100,17 @@ def rebuild_knowledge_graph() -> dict:
             for s in shops:
                 add_entity("shop", f"SHOP_{s.shop_code}", s.name, {"code": s.shop_code})
 
-            # Stations
+            # Stations — use raw_station_id as display label when available
             stations = session.query(Station).all()
             for st in stations:
-                add_entity("station", f"STATION_{st.station_code}", st.name, {
+                # Prefer raw original identifier (TCF_2_STN_7) as display label
+                display_label = st.raw_station_id or st.station_code
+                shop_name = st.shop.name if st.shop else "N/A"
+                add_entity("station", f"STATION_{st.station_code}", display_label, {
                     "code": st.station_code,
-                    "shop": st.shop.name if st.shop else "N/A"
+                    "raw_id": st.raw_station_id or st.station_code,
+                    "shop": shop_name,
+                    "shop_code": st.shop.shop_code if st.shop else ""
                 })
 
             # Processes
@@ -197,7 +203,7 @@ def rebuild_knowledge_graph() -> dict:
                     add_edge(f"STATION_{stn.station_code}", f"TOOL_{tl.tool_code}", "uses")
                     add_edge(f"TOOL_{tl.tool_code}", f"STATION_{stn.station_code}", "related_to")
 
-            # Skill -> Operation (via SkillOperationMap)
+            # Skill → Operation (via SkillOperationMap)
             skill_op_maps = session.query(SkillOperationMap).all()
             for link in skill_op_maps:
                 sk = link.skill
@@ -205,6 +211,24 @@ def rebuild_knowledge_graph() -> dict:
                 if sk and op:
                     add_edge(f"OP_{op.operation_code}", f"SKILL_{sk.skill_code}", "requires", link.confidence)
                     add_edge(f"SKILL_{sk.skill_code}", f"OP_{op.operation_code}", "mapped_to", link.confidence)
+
+            # Skill → Station (via SkillStationMap — direct, no hop chain)
+            skill_stn_maps = session.query(SkillStationMap).all()
+            for link in skill_stn_maps:
+                sk = link.skill
+                stn = link.station
+                if sk and stn:
+                    add_edge(f"STATION_{stn.station_code}", f"SKILL_{sk.skill_code}", "requires_skill", link.confidence)
+                    add_edge(f"SKILL_{sk.skill_code}", f"STATION_{stn.station_code}", "applied_at", link.confidence)
+
+            # Station → Operation (via StationOperationMap — direct shortcut)
+            stn_op_maps = session.query(StationOperationMap).all()
+            for link in stn_op_maps:
+                stn = link.station
+                op = link.operation
+                if stn and op:
+                    add_edge(f"STATION_{stn.station_code}", f"OP_{op.operation_code}", "has_operation", 1.0)
+                    add_edge(f"OP_{op.operation_code}", f"STATION_{stn.station_code}", "performed_at_station", 1.0)
 
             # Topic (Subject) -> Subtopic
             for stp in subtopics:
@@ -405,109 +429,154 @@ class GraphRelationshipEngine:
     @staticmethod
     def resolve_industrial_context(session, ent) -> dict:
         """
-        Traverses the unified graph (depth <= 4) to find the primary associated 
-        Station, Process, Shop, and Tools for any GraphEntity.
+        Resolves industrial context for any graph entity using DIRECT SQL joins
+        against domain tables (Station, Process, Tool, Skill, Shop) rather than
+        unreliable graph BFS.
+
+        Strategy per entity type:
+          - station   → direct lookup, load all tools/skills/processes
+          - process   → join to station, then tools
+          - operation → join to process → station
+          - skill     → direct SkillStationMap join
+          - tool      → direct ToolStationMap join
+          - topic/subtopic/subject → skill → SkillStationMap → station
+        Falls back to graph BFS only when no domain row is found.
         """
         context = {
-            "shop": "Trim Line Shop",
+            "shop": None,
             "station": None,
             "process": None,
-            "tools": []
+            "tools": [],
+            "skills": [],
+            "operation_summary": None,
         }
-        
-        def get_neighbors_by_type(node_id, types):
-            rels = session.query(GraphRelationship).filter(
-                (GraphRelationship.source_id == node_id) | (GraphRelationship.target_id == node_id)
-            ).all()
-            results = []
-            for r in rels:
-                neighbor = r.target if r.source_id == node_id else r.source
-                if neighbor and neighbor.entity_type.lower() in types:
-                    results.append(neighbor)
-            return results
 
-        # Simple BFS up to depth 4 to locate nearest station & process
-        queue = [(ent, 0)]
-        visited = {ent.id}
-        nearest_station = None
-        nearest_process = None
-        
-        while queue:
-            curr, depth = queue.pop(0)
-            
-            if curr.entity_type.lower() == "station" and not nearest_station:
-                nearest_station = curr
-            if curr.entity_type.lower() == "process" and not nearest_process:
-                nearest_process = curr
-                
-            if nearest_station and nearest_process:
-                break
-                
-            if depth < 4:
-                rels = session.query(GraphRelationship).filter(
-                    (GraphRelationship.source_id == curr.id) | (GraphRelationship.target_id == curr.id)
-                ).all()
-                for r in rels:
-                    neighbor = r.target if r.source_id == curr.id else r.source
-                    if neighbor and neighbor.id not in visited:
-                        visited.add(neighbor.id)
-                        queue.append((neighbor, depth + 1))
-                        
-        if nearest_station:
+        etype = ent.entity_type.lower()
+        code  = ent.code  # e.g. STATION_TCF_2_STN_7 or TOOL_TORQUE_WRENCH
+
+        station_obj = None
+
+        # ─ STATION ─────────────────────────────────────────────
+        if etype == "station":
+            # Strip prefix to get original station_code
+            raw_code = code.removeprefix("STATION_")
+            station_obj = session.query(Station).filter_by(station_code=raw_code).first()
+
+        # ─ PROCESS ────────────────────────────────────────────
+        elif etype == "process":
+            raw_code = code.removeprefix("PROCESS_")
+            proc = session.query(Process).filter_by(process_code=raw_code).first()
+            if proc and proc.station:
+                station_obj = proc.station
+
+        # ─ OPERATION ──────────────────────────────────────────
+        elif etype == "operation":
+            raw_code = code.removeprefix("OP_")
+            op = session.query(Operation).filter_by(operation_code=raw_code).first()
+            if op:
+                context["operation_summary"] = op.operation_summary
+                # Walk: operation → station via StationOperationMap
+                som = session.query(StationOperationMap).filter_by(operation_id=op.id).first()
+                if som:
+                    station_obj = som.station
+                elif op.process and op.process.station:
+                    station_obj = op.process.station
+
+        # ─ SKILL ──────────────────────────────────────────────
+        elif etype == "skill":
+            raw_code = code.removeprefix("SKILL_")
+            sk = session.query(Skill).filter_by(skill_code=raw_code).first()
+            if sk:
+                ssm = session.query(SkillStationMap).filter_by(skill_id=sk.id).first()
+                if ssm:
+                    station_obj = ssm.station
+
+        # ─ TOOL ──────────────────────────────────────────────
+        elif etype == "tool":
+            raw_code = code.removeprefix("TOOL_")
+            tl = session.query(Tool).filter_by(tool_code=raw_code).first()
+            if tl and tl.station_links:
+                station_obj = tl.station_links[0].station
+
+        # ─ POPULATE CONTEXT FROM STATION ──────────────────────────
+        if station_obj:
             context["station"] = {
-                "id": nearest_station.id,
-                "name": nearest_station.name,
-                "code": nearest_station.code
+                "id":    station_obj.id,
+                "name":  station_obj.raw_station_id or station_obj.name,
+                "code":  station_obj.station_code,
             }
-            if nearest_station.properties and isinstance(nearest_station.properties, dict):
-                shop_val = nearest_station.properties.get("shop") or nearest_station.properties.get("shop_code")
-                if shop_val:
-                    context["shop"] = shop_val
-                    
-            station_tools = get_neighbors_by_type(nearest_station.id, ["tool"])
-            for tool in station_tools:
-                context["tools"].append({
-                    "id": tool.id,
-                    "name": tool.name,
-                    "code": tool.code
-                })
-                
-        if nearest_process:
-            context["process"] = {
-                "id": nearest_process.id,
-                "name": nearest_process.name,
-                "code": nearest_process.code
-            }
-        else:
-            if nearest_station:
-                st_processes = get_neighbors_by_type(nearest_station.id, ["process"])
-                if st_processes:
-                    context["process"] = {
-                        "id": st_processes[0].id,
-                        "name": st_processes[0].name,
-                        "code": st_processes[0].code
-                    }
-                    
-        if not context["tools"]:
-            direct_tools = get_neighbors_by_type(ent.id, ["tool"])
-            for tool in direct_tools:
-                context["tools"].append({
-                    "id": tool.id,
-                    "name": tool.name,
-                    "code": tool.code
-                })
 
-        seen_tool_ids = set()
-        unique_tools = []
-        for t in context["tools"]:
-            if t["id"] not in seen_tool_ids:
-                seen_tool_ids.add(t["id"])
-                unique_tools.append(t)
-        context["tools"] = unique_tools
-        
+            # Shop
+            if station_obj.shop:
+                context["shop"] = station_obj.shop.name or station_obj.shop.shop_code
+
+            # Primary process
+            if station_obj.processes:
+                p = station_obj.processes[0]
+                context["process"] = {
+                    "id":   p.id,
+                    "name": p.name,
+                    "code": p.process_code,
+                }
+
+            # Tools (via ToolStationMap — direct DB join)
+            seen_tool_ids = set()
+            for tlink in station_obj.tool_links:
+                tl = tlink.tool
+                if tl and tl.id not in seen_tool_ids:
+                    seen_tool_ids.add(tl.id)
+                    context["tools"].append({
+                        "id":   tl.id,
+                        "name": tl.name,
+                        "code": tl.tool_code,
+                    })
+
+            # Skills (via SkillStationMap — direct DB join)
+            seen_skill_ids = set()
+            for slink in station_obj.skill_links:
+                sk = slink.skill
+                if sk and sk.id not in seen_skill_ids:
+                    seen_skill_ids.add(sk.id)
+                    context["skills"].append({
+                        "id":   sk.id,
+                        "name": sk.name,
+                        "code": sk.skill_code,
+                    })
+
+            # Operation summary (first operation at this station)
+            if not context["operation_summary"] and station_obj.operation_links:
+                op = station_obj.operation_links[0].operation
+                if op and op.operation_summary:
+                    context["operation_summary"] = op.operation_summary
+
+        # ─ FALLBACK: graph BFS if domain lookup found nothing ───────────
+        if not station_obj:
+            queue = [(ent, 0)]
+            visited = {ent.id}
+            while queue:
+                curr, depth = queue.pop(0)
+                if curr.entity_type.lower() == "station":
+                    context["station"] = {
+                        "id":   curr.id,
+                        "name": curr.name,
+                        "code": curr.code,
+                    }
+                    if curr.properties and isinstance(curr.properties, dict):
+                        context["shop"] = curr.properties.get("shop") or context["shop"]
+                    break
+                if depth < 4:
+                    rels = session.query(GraphRelationship).filter(
+                        (GraphRelationship.source_id == curr.id) | (GraphRelationship.target_id == curr.id)
+                    ).all()
+                    for r in rels:
+                        nb = r.target if r.source_id == curr.id else r.source
+                        if nb and nb.id not in visited:
+                            visited.add(nb.id)
+                            queue.append((nb, depth + 1))
+
         if not context["shop"]:
             context["shop"] = "Trim Line Shop"
-            
+
         return context
 
     @staticmethod

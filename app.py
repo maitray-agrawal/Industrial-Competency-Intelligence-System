@@ -18,6 +18,7 @@ from models import (
     Shop, Station, Process, Operation, Skill, Tool,
     Topic, Subtopic, StagingData, CompetencyMap,
     SkillOperationMap, TopicSkillMap, ToolStationMap, UploadedFile,
+    SkillStationMap, StationOperationMap,
     GraphEntity, GraphRelationship
 )
 from sqlalchemy import Integer as _SAInteger
@@ -405,6 +406,72 @@ def remap():
         flash(f"Knowledge mapping recomputed and graph synchronized — {stats}", "success")
     except Exception as e:
         flash(f"Mapping failed: {e}", "danger")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/reset-db", methods=["POST"])
+@requires_auth
+def reset_db():
+    """
+    Wipes all industrial domain tables and re-runs ETL from the last uploaded station file.
+    Use this after fixing ETL logic to regenerate clean, correct station data.
+    """
+    try:
+        from database import Base, engine as _engine
+        import sqlalchemy
+
+        with SessionLocal() as session:
+            # Delete all domain data in dependency order (leaves → roots)
+            session.query(StationOperationMap).delete()
+            session.query(SkillStationMap).delete()
+            session.query(ToolStationMap).delete()
+            session.query(SkillOperationMap).delete()
+            session.query(CompetencyMap).delete()
+            session.query(GraphRelationship).delete()
+            session.query(GraphEntity).delete()
+            session.query(StagingData).delete()
+            session.query(UploadedFile).delete()
+            # Domain entities
+            from models import Subtopic, Topic, Semester, Diploma
+            from models import Skill, Tool, Operation, Process, Station, Shop
+            session.query(Subtopic).delete()
+            session.query(Topic).delete()
+            session.query(Semester).delete()
+            session.query(Diploma).delete()
+            session.query(Skill).delete()
+            session.query(Tool).delete()
+            session.query(Operation).delete()
+            session.query(Process).delete()
+            session.query(Station).delete()
+            session.query(Shop).delete()
+            session.commit()
+            logger.info("Database reset complete.")
+
+        # Re-run on every xlsx in uploads folder
+        re_ingested = 0
+        for fname in os.listdir(UPLOAD_FOLDER):
+            if fname.lower().endswith((".xlsx", ".xls")):
+                fpath = os.path.join(UPLOAD_FOLDER, fname)
+                try:
+                    stats = IngestionPipeline.ingest_excel(fpath)
+                    mapper = KnowledgeMapper()
+                    mapper.run()
+                    SearchIndexer.rebuild_index()
+                    from graph_engine import rebuild_knowledge_graph
+                    rebuild_knowledge_graph()
+                    re_ingested += 1
+                    logger.info(f"Re-ingested: {fname} — {stats}")
+                except Exception as fe:
+                    logger.error(f"Re-ingest failed for {fname}: {fe}", exc_info=True)
+
+        flash(
+            f"✅ Database reset and re-ingested {re_ingested} file(s). "
+            "Station IDs, tools, and mappings are now correct.",
+            "success"
+        )
+    except Exception as e:
+        flash(f"❌ Reset failed: {e}", "danger")
+        logger.error(f"DB reset failed: {e}", exc_info=True)
     return redirect(url_for("admin"))
 
 
