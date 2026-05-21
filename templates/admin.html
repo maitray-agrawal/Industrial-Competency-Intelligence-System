@@ -9,10 +9,10 @@
 
 <!-- Tab Nav -->
 <div class="tab-nav" id="admin-tabs">
-    <button class="tab-btn active" onclick="showTab('upload')" id="tab-upload">📤 Upload Data</button>
-    <button class="tab-btn" onclick="showTab('controls')" id="tab-controls">🔄 Engine Controls</button>
-    <button class="tab-btn" onclick="showTab('audit')" id="tab-audit">📋 Audit Log</button>
-    <button class="tab-btn" onclick="showTab('health')" id="tab-health">📊 System Health</button>
+    <button class="tab-btn active" onclick="showTab('upload')" id="tab-upload">Upload Data</button>
+    <button class="tab-btn" onclick="showTab('controls')" id="tab-controls">Engine Controls</button>
+    <button class="tab-btn" onclick="showTab('audit')" id="tab-audit">Audit Log</button>
+    <button class="tab-btn" onclick="showTab('health')" id="tab-health">System Health</button>
 </div>
 
 <!-- TAB: Upload -->
@@ -29,8 +29,8 @@
                 <label for="source_type">Dataset Type</label>
                 <select name="source_type" id="source_type" class="form-select">
                     <option value="auto">🔍 Auto-Detect (Recommended)</option>
-                    <option value="station_data">🏭 Station Data (Trim Station)</option>
-                    <option value="tcf_data">📚 TCF Theory Data</option>
+                    <option value="station_data">Station Data (Trim Station)</option>
+                    <option value="tcf_data"> TCF Theory Data</option>
                 </select>
             </div>
             <div class="form-group">
@@ -39,7 +39,7 @@
                     <input type="file" name="file" id="file" class="form-file-hidden"
                            accept=".xlsx,.xls" onchange="updateFileLabel(this)">
                     <label for="file" class="file-drop-label" id="file-drop-label">
-                        <span class="file-icon">📁</span>
+                        <span class="file-icon"> </span>
                         <span id="file-name-display">Drag &amp; drop or click to select .xlsx / .xls</span>
                     </label>
                 </div>
@@ -53,7 +53,7 @@
     <!-- Dataset Schema Reference -->
     <div class="schema-ref-grid">
         <div class="schema-card">
-            <h3>📋 Station Data Schema</h3>
+            <h3>Station Data Schema</h3>
             <table class="schema-table">
                 <tr><th>Column</th><th>Required</th></tr>
                 <tr><td>shop</td><td><span class="badge-req">Required</span></td></tr>
@@ -65,7 +65,7 @@
             </table>
         </div>
         <div class="schema-card">
-            <h3>📚 TCF Theory Schema</h3>
+            <h3>TCF Theory Schema</h3>
             <table class="schema-table">
                 <tr><th>Column</th><th>Required</th></tr>
                 <tr><td>topic</td><td><span class="badge-req">Required</span></td></tr>
@@ -83,7 +83,7 @@
 <div class="tab-pane fade-in" id="pane-controls" style="display:none">
     <div class="controls-grid">
         <div class="control-card">
-            <h3>🧠 Recompute Knowledge Mappings</h3>
+            <h3>Recompute Knowledge Mappings</h3>
             <p>Re-runs TF-IDF + keyword mapping between theory topics and station skills. Run this after uploading both datasets.</p>
             <form action="{{ url_for('remap') }}" method="POST" id="remap-form">
                 <button type="submit" class="primary-btn" id="remap-btn">Recompute Mappings</button>
@@ -97,14 +97,14 @@
             </form>
         </div>
         <div class="control-card" style="border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.04);">
-            <h3 style="color: var(--red);">🗑️ Reset &amp; Re-Ingest Database</h3>
+            <h3 style="color: var(--red);">Reset &amp; Re-Ingest Database</h3>
             <p style="font-size:0.85rem;">Wipes <strong>all</strong> industrial data and re-runs the ETL pipeline from uploaded files with corrected logic. Use this to fix station IDs, tool mappings, and relationships after an ETL bug fix.</p>
             <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.4rem;">⚠️ This deletes all current entities and re-ingests from scratch.</p>
             <form action="{{ url_for('reset_db') }}" method="POST" id="reset-db-form"
-                  onsubmit="return confirm('⚠️ This will DELETE all industrial data and re-ingest from uploaded files. Are you sure?');">
+                  onsubmit="return confirm(' This will DELETE all industrial data and re-ingest from uploaded files. Are you sure?');">
                 <button type="submit" class="primary-btn" id="reset-db-btn"
                         style="background: linear-gradient(135deg,#dc2626,#b91c1c); box-shadow: 0 0 12px rgba(239,68,68,0.3);">
-                    🔄 Reset &amp; Re-Ingest
+                     Reset &amp; Re-Ingest
                 </button>
             </form>
         </div>

@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}IIK-CME{% endblock %} — Industrial Knowledge Engine</title>
+    <title>{% block title %}/home/ubuntu/Documents/DATA/{% endblock %} — Industrial Knowledge Engine</title>
     <meta name="description" content="Offline Industrial Knowledge & Competency Mapping Engine for manufacturing environments.">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     <nav class="navbar" role="navigation" aria-label="Main navigation">
         <div class="nav-brand">
-            <span class="nav-logo">⚙</span>
-            <span>IIK-CME</span>
+            <a href="{{ url_for('index') }}" class="logo-link">
+                <img src="{{ url_for('static', filename='images/logo.svg') }}" alt="Logo" class="brand-logo-img">
+            </a>
         </div>
         <div class="nav-links">
             <a href="{{ url_for('index') }}" class="nav-btn {% if request.endpoint == 'index' %}active{% endif %}" id="nav-dashboard">Dashboard</a>
@@ -34,7 +35,7 @@
     </div>
 
     <footer class="footer">
-        <span>IIK-CME &mdash; 100% Offline &mdash; Air-Gapped Industrial Intelligence</span>
+        <span>/home/ubuntu/Documents/DATA/ &mdash; 100% Offline &mdash; Air-Gapped Industrial Intelligence</span>
         <span class="footer-badge">SECURE OFFLINE MODE</span>
     </footer>
 </body>

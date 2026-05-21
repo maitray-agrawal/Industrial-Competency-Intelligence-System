@@ -73,6 +73,11 @@ code { font-family: var(--font-mono); font-size: 0.88em; background: var(--bg-ho
     font-size: 1.1rem; font-weight: 800; letter-spacing: .08em;
     color: var(--accent); white-space: nowrap;
 }
+.brand-logo-img {
+    height: 2rem;
+    width: auto;
+    display: block;
+}
 .nav-logo { font-size: 1.3rem; }
 .nav-links { display: flex; gap: .25rem; flex-wrap: wrap; }
 .nav-btn {

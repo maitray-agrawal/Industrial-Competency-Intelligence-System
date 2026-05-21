@@ -53,7 +53,7 @@ def allowed_file(filename: str) -> bool:
 # Auth — HTTP Basic Auth for admin panel
 # ---------------------------------------------------------------------------
 ADMIN_USER = os.environ.get("IIK_ADMIN_USER", "admin")
-ADMIN_PASS = os.environ.get("IIK_ADMIN_PASS", "secure_offline_123")
+ADMIN_PASS = os.environ.get("IIK_ADMIN_PASS", "tata@1945")
 
 
 def check_auth(username, password):
