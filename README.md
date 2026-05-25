@@ -362,6 +362,11 @@ The main search panel features a responsive dual-view interface combining force-
 The secure dashboard allows engineers to upload new spreadsheets, monitor data parsing logs, and view ingested statistics in real time.
 ![Admin Ingest Dashboard](screenshots/admin-dashboard.png)
 
+### Current Dashboard Snapshot
+A live view of the currently running dashboard (home page).
+![Current Dashboard](screenshots/admin-dashboard.png)
+
+
 ### Relationship Drawer & Details Panel
 Selecting any node or card opens a slide-out panel, displaying the exact shop-floor context, tooling specifications, and competency vectors.
 ![Relationship Panel](screenshots/relationship-panel.png)
