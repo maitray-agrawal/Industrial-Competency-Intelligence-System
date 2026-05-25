@@ -33,15 +33,15 @@
     }
 
     .interactive-card:hover {
-        transform: translateY(-3px);
+        transform: none;
         border-color: var(--accent);
-        box-shadow: 0 10px 20px rgba(59, 130, 246, 0.1);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         background: var(--bg-hover);
     }
 
     .interactive-card.selected {
         border-color: var(--accent);
-        box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         background: var(--bg-card-2);
     }
 
@@ -62,12 +62,10 @@
         top: 0;
         bottom: 0;
         width: 480px;
-        background: rgba(17, 24, 39, 0.95);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
+        background: white;
         z-index: 1000;
-        box-shadow: -8px 0 32px rgba(0, 0, 0, 0.6);
-        border-left: 1px solid var(--border-lit);
+        box-shadow: -1px 0 3px rgba(0, 0, 0, 0.1);
+        border-left: 1px solid #e5e7eb;
         padding: 2.5rem 2rem;
         overflow-y: auto;
         transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -84,26 +82,26 @@
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid #e5e7eb;
         padding-bottom: 1rem;
     }
 
     .close-sidebar-btn {
         background: none;
         border: none;
-        color: var(--text-muted);
+        color: #6b7280;
         font-size: 1.5rem;
         cursor: pointer;
         transition: color 0.2s;
     }
 
     .close-sidebar-btn:hover {
-        color: var(--red);
+        color: #ef4444;
     }
 
     .sidebar-section {
-        background: rgba(255, 255, 255, 0.02);
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
         border-radius: var(--radius);
         padding: 1.2rem;
         display: flex;
@@ -112,7 +110,7 @@
     }
 
     .sidebar-section h4 {
-        color: var(--cyan);
+        color: #3b82f6;
         font-size: 0.9rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
@@ -130,16 +128,16 @@
         font-weight: 600;
         padding: 0.3rem 0.6rem;
         border-radius: 6px;
-        background: var(--bg-hover);
-        border: 1px solid var(--border);
-        color: var(--text-main);
+        background: #f3f4f6;
+        border: 1px solid #d1d5db;
+        color: #111827;
     }
 
-    .pill-badge.station-badge { border-color: var(--cyan); color: var(--cyan); }
-    .pill-badge.process-badge { border-color: var(--green); color: var(--green); }
-    .pill-badge.skill-badge { border-color: var(--orange); color: var(--orange); }
-    .pill-badge.tool-badge { border-color: var(--red); color: var(--red); }
-    .pill-badge.subject-badge { border-color: var(--purple); color: var(--purple); }
+    .pill-badge.station-badge { border-color: #06b6d4; color: #06b6d4; }
+    .pill-badge.process-badge { border-color: #10b981; color: #10b981; }
+    .pill-badge.skill-badge { border-color: #f97316; color: #f97316; }
+    .pill-badge.tool-badge { border-color: #ef4444; color: #ef4444; }
+    .pill-badge.subject-badge { border-color: #a855f7; color: #a855f7; }
 
     .clickable-badge {
         cursor: pointer;
@@ -147,7 +145,7 @@
     }
     .clickable-badge:hover {
         transform: scale(1.05);
-        filter: brightness(1.2);
+        filter: brightness(0.95);
         box-shadow: 0 0 8px currentColor;
     }
 
@@ -155,7 +153,7 @@
         font-size: 0.8rem;
         padding: 0.5rem;
         border-radius: 6px;
-        background: rgba(255,255,255,0.01);
+        background: #f3f4f6;
         border-left: 3px solid var(--accent);
         margin-bottom: 0.3rem;
     }
@@ -163,8 +161,8 @@
     /* ── Inline Industrial Context Block ─────────────────────── */
     .card-industrial-context {
         margin-top: 1rem;
-        background: rgba(245, 158, 11, 0.04);
-        border: 1px solid rgba(245, 158, 11, 0.18);
+        background: #fffbeb;
+        border: 1px solid #fde68a;
         border-radius: 8px;
         overflow: hidden;
     }
@@ -174,8 +172,8 @@
         align-items: center;
         gap: 0.5rem;
         padding: 0.45rem 0.9rem;
-        background: rgba(245, 158, 11, 0.09);
-        border-bottom: 1px solid rgba(245, 158, 11, 0.12);
+        background: #fef3c7;
+        border-bottom: 1px solid #fde68a;
     }
 
     .card-ind-header span {
@@ -183,7 +181,7 @@
         font-weight: 800;
         letter-spacing: 0.1em;
         text-transform: uppercase;
-        color: var(--amber);
+        color: #d97706;
     }
 
     .card-ind-icon {
@@ -213,13 +211,13 @@
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        color: var(--text-muted);
+        color: #6b7280;
     }
 
     .card-ind-value {
         font-size: 0.78rem;
         font-weight: 600;
-        color: var(--text-main);
+        color: #111827;
         max-width: 100%;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -238,17 +236,17 @@
         font-weight: 700;
         padding: 0.18rem 0.5rem;
         border-radius: 4px;
-        background: rgba(239, 68, 68, 0.1);
-        border: 1px solid rgba(239, 68, 68, 0.35);
-        color: #fca5a5;
+        background: #fee2e2;
+        border: 1px solid #fecaca;
+        color: #dc2626;
         cursor: pointer;
         transition: all 0.15s ease;
     }
 
     .card-ind-tool-badge:hover {
-        background: rgba(239, 68, 68, 0.22);
-        box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
-        transform: translateY(-1px);
+        background: #fca5a5;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        transform: none;
     }
 
     .card-ind-station-badge {
@@ -256,9 +254,9 @@
         font-weight: 700;
         padding: 0.2rem 0.5rem;
         border-radius: 4px;
-        background: rgba(6, 182, 212, 0.1);
-        border: 1px solid rgba(6, 182, 212, 0.35);
-        color: var(--cyan);
+        background: #cffafe;
+        border: 1px solid #a5f3fc;
+        color: #0891b2;
         cursor: pointer;
         transition: all 0.15s ease;
         display: inline-block;
@@ -269,8 +267,8 @@
     }
 
     .card-ind-station-badge:hover {
-        background: rgba(6, 182, 212, 0.2);
-        box-shadow: 0 0 6px rgba(6, 182, 212, 0.4);
+        background: #a5f3fc;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     .card-ind-process-badge {
@@ -278,9 +276,9 @@
         font-weight: 700;
         padding: 0.2rem 0.5rem;
         border-radius: 4px;
-        background: rgba(16, 185, 129, 0.1);
-        border: 1px solid rgba(16, 185, 129, 0.35);
-        color: var(--green);
+        background: #dcfce7;
+        border: 1px solid #bbf7d0;
+        color: #047857;
         cursor: pointer;
         transition: all 0.15s ease;
         display: inline-block;
@@ -291,8 +289,8 @@
     }
 
     .card-ind-process-badge:hover {
-        background: rgba(16, 185, 129, 0.2);
-        box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+        background: #bbf7d0;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     .card-ind-shop-badge {
@@ -300,9 +298,9 @@
         font-weight: 700;
         padding: 0.2rem 0.5rem;
         border-radius: 4px;
-        background: rgba(59, 130, 246, 0.1);
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        color: #93c5fd;
+        background: #dbeafe;
+        border: 1px solid #bfdbfe;
+        color: #1e40af;
         display: inline-block;
     }
 
@@ -315,9 +313,9 @@
         height: 14px;
         border-radius: 4px;
         background: linear-gradient(90deg,
-            rgba(255,255,255,0.03) 25%,
-            rgba(255,255,255,0.07) 50%,
-            rgba(255,255,255,0.03) 75%);
+            #f3f4f6 25%,
+            #e5e7eb 50%,
+            #f3f4f6 75%);
         background-size: 800px 100%;
         animation: shimmer 1.4s infinite linear;
     }
@@ -334,7 +332,7 @@
     }
 
     .spinner {
-        border: 3px solid rgba(255,255,255,0.05);
+        border: 3px solid #e5e7eb;
         border-top: 3px solid var(--accent);
         border-radius: 50%;
         width: 40px;
@@ -469,9 +467,9 @@
             <!-- Amber header bar -->
             <div style="display: flex; align-items: center; gap: 0.6rem;
                         padding: 0.65rem 1.1rem;
-                        background: rgba(245,158,11,0.1);
-                        border-bottom: 1px solid rgba(245,158,11,0.15);">
-                <span style="font-size: 1rem;">🏭</span>
+                        background: rgba(0, 0, 0, 0.1);
+                        border-bottom: 1px solid rgba(9, 8, 6, 0.15);">
+                <span style="font-size: 1rem;"> </span>
                 <span style="font-size: 0.75rem; font-weight: 800; letter-spacing: 0.1em;
                              text-transform: uppercase; color: var(--amber);">Industrial Context</span>
             </div>
@@ -680,9 +678,9 @@
                 const theoryList = document.getElementById("side-theory-info");
                 theoryList.innerHTML = "";
                 const syllabus = [
-                    ...data.semesters.map(s => `🎓 <strong>Semester:</strong> ${s.name} (Diploma: ${s.weight || 'Automobile Techn.'})`),
-                    ...data.diplomas.map(d => `📜 <strong>Diploma:</strong> ${d.name}`),
-                    ...data.subjects.map(sub => `📚 <strong>Subject Area:</strong> ${sub.name}`)
+                    ...data.semesters.map(s => ` <strong>Semester:</strong> ${s.name} (Diploma: ${s.weight || 'Automobile Techn.'})`),
+                    ...data.diplomas.map(d => `<strong>Diploma:</strong> ${d.name}`),
+                    ...data.subjects.map(sub => ` <strong>Subject Area:</strong> ${sub.name}`)
                 ];
                 if (syllabus.length) {
                     syllabus.forEach(item => {
@@ -710,7 +708,7 @@
                 learnDiv.innerHTML = "";
                 if (data.learning_modules.length) {
                     data.learning_modules.forEach(m => {
-                        const icon = m.type === 'subject' ? '📚' : '💡';
+                        const icon = m.type === 'subject' ? ' ' : ' ';
                         learnDiv.innerHTML += `<span class="pill-badge subject-badge">${icon} ${m.name}</span>`;
                     });
                     document.getElementById("side-sec-learning").style.display = "flex";

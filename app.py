@@ -1,10 +1,3 @@
-"""
-app.py
-------
-Flask application for IIK-CME.
-Production-safe configuration with env-var debug toggle.
-"""
-
 import os
 import atexit
 import hashlib
@@ -36,7 +29,7 @@ logger = get_logger("FlaskApp")
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = os.environ.get("IIK_SECRET_KEY", "industrial-offline-secret-2025")
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB upload limit
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB upload limit
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -44,7 +37,7 @@ ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
 
 DEBUG_MODE = os.environ.get("FLASK_ENV", "production").lower() == "development"
 
-
+0
 def allowed_file(filename: str) -> bool:
     return os.path.splitext(filename.lower())[1] in ALLOWED_EXTENSIONS
 
@@ -264,7 +257,7 @@ def admin():
 @app.route("/admin/ingest", methods=["POST"])
 @requires_auth
 def ingest():
-    # ── 1. Presence check ──────────────────────────────────────────────────
+    # ── 1. Presence check 
     if "file" not in request.files:
         flash("No file part in request.", "danger")
         return redirect(url_for("admin"))
@@ -274,7 +267,7 @@ def ingest():
         flash("No file selected.", "danger")
         return redirect(url_for("admin"))
 
-    # ── 2. Extension whitelist (BEFORE touching disk) ──────────────────────
+    # ── 2. Extension whitelist (BEFORE touching disk)
     if not allowed_file(file.filename):
         flash(
             f"❌ Rejected '{file.filename}': only .xlsx and .xls files are accepted.",
@@ -304,13 +297,13 @@ def ingest():
             logger.info(f"Duplicate upload blocked: '{file.filename}' matches '{existing.filename}'")
             return redirect(url_for("admin"))
 
-    # ── 4. Sanitize filename + make unique to prevent overwrites ───────────
+    # ── 4. Sanitize filename + make unique to prevent overwrites 
     original_name = secure_filename(file.filename)
     stem, ext = os.path.splitext(original_name)
     unique_name = f"{stem}_{_uuid.uuid4().hex[:8]}{ext}"
     filepath = os.path.join(UPLOAD_FOLDER, unique_name)
 
-    # ── 5. Save to upload folder ───────────────────────────────────────────
+    # ── 5. Save to upload folder 
     try:
         file.save(filepath)
     except Exception as save_err:
@@ -318,7 +311,7 @@ def ingest():
         logger.error(f"File save error: {save_err}")
         return redirect(url_for("admin"))
 
-    # ── 6. Validate that the file is a readable Excel workbook ────────────
+    # ── 6. Validate that the file is a readable Excel workbook 
     try:
         import pandas as _pd
         _pd.read_excel(filepath, nrows=1)   # lightweight probe — just read header row
@@ -332,28 +325,28 @@ def ingest():
         logger.warning(f"Excel probe failed for '{original_name}': {probe_err}")
         return redirect(url_for("admin"))
 
-    # ── 7. Run ETL pipeline ────────────────────────────────────────────────
+    # ── 7. Run ETL pipeline 
     source_type = request.form.get("source_type", "auto")
     try:
         logger.info(f"Admin ingestion: file='{original_name}' type='{source_type}'")
         stats = IngestionPipeline.ingest_excel(filepath, source_type)
         logger.info(f"ETL stats: {stats}")
 
-        # ── 8. Recompute mappings ──────────────────────────────────────────
+        # ── 8. Recompute mappings
         mapper = KnowledgeMapper()
         map_stats = mapper.run()
         logger.info(f"Mapping stats: {map_stats}")
 
-        # ── 9. Rebuild FTS5 search index ──────────────────────────────────
+        # ── 9. Rebuild FTS5 search index 
         index_count = SearchIndexer.rebuild_index()
         logger.info(f"Search index rebuilt: {index_count} documents")
 
-        # ── 10. Rebuild Knowledge Graph Cache ──────────────────────────────
+        # ── 10. Rebuild Knowledge Graph Cache 
         from graph_engine import rebuild_knowledge_graph
         graph_stats = rebuild_knowledge_graph()
         logger.info(f"Knowledge Graph sync: {graph_stats}")
 
-        # ── 11. Add to Uploaded Registry ───────────────────────────────────
+        # ── 11. Add to Uploaded Registry 
         with SessionLocal() as session:
             db_file = UploadedFile(
                 filename=original_name,
@@ -367,6 +360,7 @@ def ingest():
             f"ETL: {stats} | Mappings: {map_stats} | Graph Nodes: {graph_stats['nodes']}",
             "success",
         )
+        3
 
     except ValueError as ve:
         if os.path.exists(filepath):

@@ -5,14 +5,14 @@
 <!-- Hero -->
 <section class="hero-section">
     <div class="hero-text">
-        <h1>Industrial Knowledge <span class="accent-text">& Competency</span> Engine</h1>
-        <p>Offline mapping of theory, skills, operations, and workstations. Zero internet. Zero cloud.</p>
+        <h1>Industrial Talent & Competency Engine</h1>
+        <p>Intelligent talent mapping across your manufacturing workforce. Discover skills, identify gaps, build tomorrow's teams.</p>
     </div>
     <div class="hero-badge-row">
-        <span class="hero-badge">🔒 Air-Gapped</span>
-        <span class="hero-badge">⚡ FTS5 Search</span>
-        <span class="hero-badge">🧠 TF-IDF Mapping</span>
-        <span class="hero-badge">🏭 Industry 4.0</span>
+        <span class="hero-badge">Skill Mapping</span>
+        <span class="hero-badge">Talent Analytics</span>
+        <span class="hero-badge">Competency Tracking</span>
+        <span class="hero-badge">Workforce Planning</span>
     </div>
 </section>
 
@@ -21,12 +21,12 @@
     <div class="stat-card">
         <div class="stat-icon">🏭</div>
         <div class="stat-value">{{ stats.shops }}</div>
-        <div class="stat-label">Shops</div>
+        <div class="stat-label">Facilities</div>
     </div>
     <div class="stat-card">
         <div class="stat-icon">🔧</div>
         <div class="stat-value">{{ stats.stations }}</div>
-        <div class="stat-label">Stations</div>
+        <div class="stat-label">Workstations</div>
     </div>
     <div class="stat-card">
         <div class="stat-icon">⚙️</div>
@@ -34,7 +34,7 @@
         <div class="stat-label">Processes</div>
     </div>
     <div class="stat-card">
-        <div class="stat-icon">🎯</div>
+        <div class="stat-icon">👥</div>
         <div class="stat-value">{{ stats.operations }}</div>
         <div class="stat-label">Operations</div>
     </div>
@@ -46,12 +46,12 @@
     <div class="stat-card">
         <div class="stat-icon">🛠️</div>
         <div class="stat-value">{{ stats.tools }}</div>
-        <div class="stat-label">Tools</div>
+        <div class="stat-label">Tools & Equipment</div>
     </div>
     <div class="stat-card">
         <div class="stat-icon">📚</div>
         <div class="stat-value">{{ stats.topics }}</div>
-        <div class="stat-label">Theory Topics</div>
+        <div class="stat-label">Technical Topics</div>
     </div>
     <div class="stat-card">
         <div class="stat-icon">🗺️</div>
@@ -63,7 +63,7 @@
 <!-- Quick Search -->
 <section class="quick-search-section fade-in">
     <form action="{{ url_for('search') }}" method="GET" class="search-form" id="main-search-form">
-        <input type="text" name="q" id="search-input" placeholder="Search stations, processes, skills, theory topics..." class="search-input" autocomplete="off">
+        <input type="text" name="q" id="search-input" placeholder="Search stations, skills, roles, topics..." class="search-input" autocomplete="off">
         <button type="submit" class="primary-btn" id="search-btn">Search</button>
     </form>
 </section>
@@ -71,7 +71,7 @@
 <!-- Competency Dashboard -->
 <section class="dashboard-section fade-in">
     <div class="section-header">
-        <h2>Station Competency Readiness</h2>
+        <h2>Workstation Competency Readiness</h2>
         <a href="{{ url_for('graph') }}" class="secondary-btn">View Knowledge Graph →</a>
     </div>
 
@@ -102,8 +102,8 @@
     </div>
     {% else %}
     <div class="empty-state">
-        <p>🏭 No station data yet.</p>
-        <p>Upload <code>complete_trim_station_data.xlsx</code> and <code>TCF_1.xlsx</code> via the <a href="{{ url_for('admin') }}">Admin Panel</a>.</p>
+        <p>🏭 No competency data loaded yet.</p>
+        <p>Upload <code>complete_trim_station_data.xlsx</code> and <code>TCF_1.xlsx</code> via the <a href="{{ url_for('admin') }}">Admin Panel</a> to get started.</p>
     </div>
     {% endif %}
 </section>

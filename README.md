@@ -38,7 +38,65 @@ IIK-CME solves these problems by providing a high-performance, deterministic map
 ---
 
 ## 5. System Architecture
-The engine is structured as a modular monolithic application adhering to a robust Model-View-Controller (MVC) design pattern, coupled with specialized data and graph processing engines:
+The engine is structured as a modular monolithic application adhering to a robust Model-View-ControlYou are an expert Principal Full-Stack Software Architect and Database Engineer. Your task is to generate the complete production-ready source code and structural design for an Enterprise Student Lifecycle ERP System from scratch. 
+
+The architecture must strictly follow a decoupled system design: a robust backend API (Python FastAPI or Node.js/Express) and a highly responsive, clean frontend interface (React.js with Tailwind CSS).
+
+---
+
+### MODULE 1: BACKEND DATA ENGINE & ETL (RELATIONAL)
+
+1. SYSTEM INGESTION CORE:
+   - Implement a single file upload endpoint (`POST /api/v1/admissions/upload`) that accepts an Excel file (`.xlsx`) containing multiple student tracking sheets (Induction, Admission Data, Document Pending). 
+   - STRICT CONSTRAINT: Do not implement dual or multi-file uploads. The pipeline must ingest a single comprehensive master workbook and dynamically handle parsing logic internally.
+   - Use an in-memory data parsing engine (like `pandas` or `openpyxl`) to profile and segregate incoming rows.
+
+2. ATTRITION & TARGET FEATURE SEGREGATION LOGIC:
+   - Create deterministic pipeline logic to automatically segregate and normalize raw student metrics:
+     * Clean and strip academic percentage values (handling formatting noise like '%', '℅', and strings like 'Appear'/'Pursuing' by encoding a separate tracking flag `is_degree_pursuing`).
+     * Standardize high-cardinality geographic data (`District Name`, `State`).
+     * Dynamically map and compute target variables: Combine operational markers (`Active/Inactive` status, `PCU Admission` status, and text-based dropout `Reason` strings) to handle human entry conflicts and classify each profile into structured relational states: `Active`, `Separated`, or `Pending Completion`.
+
+3. DATA MAPPING & DATABASE INTEGRATION (SQLAlchemy / PostgreSQL):
+   - Design a normalized relational schema up to 3NF. Implement the following database model schemas with strict Foreign Key (FK) relationships linked via an autoincrementing integer `student_id`:
+     * Students Table: Fields for `ticket_no` (Unique Index), `full_name`, `gender`, `dob`, contact details, and identity numbers.
+     * Admissions/Academics Table: Fields for `batch_no` (Indexed), `date_of_joining`, `date_of_admission`, stream/trade branch, cleaned 10th and 12th/ITI percentage floats.
+     * Compliance Table: Operational flags for document tracking (`is_lc_submitted`, `pending_documents_array`, `admission_status`).
+     * Finance Table: Operational tracking for banking references (`bank_name`, `account_no`, `ifsc_code`, `attendance_payout_eligible`).
+
+4. MULTI-ATTRIBUTE SEARCH & RETRIEVAL ENGINE:
+   - Implement an optimized global query API endpoint (`GET /api/v1/students/search`) that accepts query parameters: `batch_no`, `ticket_no`, or `name`.
+   - The query logic must allow searching by any of these three attributes (including partial string lookups for the name) and execute efficient joins across the relational tables to return the complete, consolidated data block for matching records.
+
+5. OJT ATTENDANCE MONITORING EXTENSION:
+   - Create an independent endpoint (`POST /api/v1/attendance/ojt-sync`) that accepts an On-the-Job Training (OJT) operational activity file.
+   - Parse this file to extract attendance logs, update the `attendance_payout_eligible` flag in the Finance table, and dynamically calculate the temporal delta between a student's `date_of_joining` and active OJT tracking days.
+
+---
+
+### MODULE 2: FRONTEND UI & OPERATIONS ENGINE (REACT + TAILWIND)
+
+1. GLOBAL UPLOAD & INTERFACE ENGINE:
+   - Provide a clean, unified dashboard drop-zone allowing users to upload the single Master Excel file. 
+   - Display immediate transactional upload states (Row Count Parsed, Validation Errors Caught, Database Seeding Progress).
+
+2. ADVANCED SEARCH & CONTROL INTERFACE:
+   - Design a top-tier global search query component containing an input bar supporting unified lookups via Batch Number, Ticket ID, or Student Name.
+   - Fetch backend results asynchronously as the user types or fires the query, handling states for zero results found or matching criteria ambiguity cleanly.
+
+3. PROFILE FLASHCARD COMPONENT:
+   - When a student profile is pulled or selected from the search bar, render their complete data architecture inside an isolated, highly polished, high-fidelity UI panel structured as a "Comprehensive Information Flashcard."
+   - Segment the Flashcard UI into 4 visually distinct grids:
+     * Card Section A: Core Demographics (Name, Avatar Placeholder, Ticket ID, Batch, Gender, DOB, Contact, Address).
+     * Card Section B: Academic Performance & Background (10th/12th/ITI Cleaned Marks, Prior Institute, Stream/Branch, Enrollment Gaps).
+     * Card Section C: Document Compliance Tracking Status (Dynamic Visual Badges reflecting document status: Green for Completed, Amber for Pending LC, Red for Critical Delinquencies like Missing Identity Proofs).
+     * Card Section D: Attendance & Operational Finance Tracking (OJT Attendance Score, Payout Eligibility Indicator, Bank Account Summary details).
+
+---
+
+### MODULE 3: PRODUCTION SOURCE CODE GENERATION
+
+Generate the full-stack codebase. The code blocks must be self-contained, handling all text-cleaning transformations, explicit relational mappings, clean API schemas, search routes, and a responsive frontend component layout without placeholder code or ellipses.ler (MVC) design pattern, coupled with specialized data and graph processing engines:
 
 ```mermaid
 graph TD
