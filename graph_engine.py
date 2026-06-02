@@ -103,7 +103,6 @@ def rebuild_knowledge_graph() -> dict:
             # Stations — use raw_station_id as display label when available
             stations = session.query(Station).all()
             for st in stations:
-                # Prefer raw original identifier (TCF_2_STN_7) as display label
                 display_label = st.raw_station_id or st.station_code
                 shop_name = st.shop.name if st.shop else "N/A"
                 add_entity("station", f"STATION_{st.station_code}", display_label, {

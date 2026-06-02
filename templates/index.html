@@ -21,7 +21,7 @@
     <div class="stat-card">
         <div class="stat-icon">🏭</div>
         <div class="stat-value">{{ stats.shops }}</div>
-        <div class="stat-label">Facilities</div>
+        <div class="stat-label">Shops</div>
     </div>
     <div class="stat-card">
         <div class="stat-icon">🔧</div>
@@ -102,7 +102,7 @@
     </div>
     {% else %}
     <div class="empty-state">
-        <p>🏭 No competency data loaded yet.</p>
+        <p> No competency data loaded yet.</p>
         <p>Upload <code>complete_trim_station_data.xlsx</code> and <code>TCF_1.xlsx</code> via the <a href="{{ url_for('admin') }}">Admin Panel</a> to get started.</p>
     </div>
     {% endif %}

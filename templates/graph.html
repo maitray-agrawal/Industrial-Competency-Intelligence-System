@@ -1,198 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Knowledge Graph{% endblock %}
+
+{% block title %}Knowledge Graph — Industrial Knowledge Engine{% endblock %}
 
 {% block content %}
-<style>
-    /* Floating Glassmorphic Graph Legend */
-    .graph-legend-overlay {
-        position: absolute;
-        top: 1.5rem;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 10;
-        display: flex;
-        gap: 1.5rem;
-        background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 9999px;
-        padding: 0.6rem 2rem;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        flex-wrap: wrap;
-        max-width: 90%;
-        transition: all 0.3s ease;
-    }
-
-    .legend-item {
-        display: flex;
-        align-items: center;
-        font-size: 0.85rem;
-        font-weight: 500;
-        color: #111827;
-        gap: 0.4rem;
-    }
-
-    .legend-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        display: inline-block;
-    }
-
-    /* Connection Badges */
-    .badge-shop { background: rgba(59,130,246,.1) !important; color: #3b82f6 !important; }
-    .badge-station { background: rgba(6,182,212,.1) !important; color: #06b6d4 !important; }
-    .badge-process { background: rgba(16,185,129,.1) !important; color: #10b981 !important; }
-    .badge-operation { background: rgba(245,158,11,.1) !important; color: #f59e0b !important; }
-    .badge-skill { background: rgba(249,115,22,.1) !important; color: #f97316 !important; }
-    .badge-tool { background: rgba(239,68,68,.1) !important; color: #ef4444 !important; }
-    .badge-subject { background: rgba(168,85,247,.1) !important; color: #a855f7 !important; }
-    .badge-topic { background: rgba(236,72,153,.1) !important; color: #ec4899 !important; }
-    .badge-semester { background: rgba(100,116,139,.1) !important; color: #94a3b8 !important; }
-    .badge-diploma { background: rgba(71,85,105,.1) !important; color: #cbd5e1 !important; }
-
-    .sidebar-conn {
-        display: inline-block;
-        padding: 0.2rem 0.5rem;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        margin-right: 0.3rem;
-        margin-bottom: 0.3rem;
-        font-weight: 600;
-    }
-</style>
-
-<div class="graph-header">
-    <div>
-        <h1>Industrial Knowledge Graph</h1>
-        <p>Interactive force-directed visualization of plant &amp; curriculum relationships. Click a node to explore.</p>
-    </div>
+<div class="page-header">
+    <h1>Knowledge Graph</h1>
+    <p class="lead">Visualize the industrial knowledge graph and competency relationships.</p>
 </div>
 
-<div class="graph-layout">
-    <div id="graph-container" class="graph-canvas">
-        <div class="graph-loading" id="graph-loading">
-            <div class="spinner"></div>
-            <p>Loading knowledge graph…</p>
-        </div>
-
-        <!-- Floating Glassmorphic Legend matching the search styling exactly -->
-        <div class="graph-legend-overlay">
-            <div class="legend-item"><span class="legend-dot" style="background:#06b6d4"></span>Station</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#10b981"></span>Process</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>Operation</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#f97316"></span>Skill</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>Tool</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#a855f7"></span>Subject</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#ec4899"></span>Topic</div>
-        </div>
-
-        <div id="graph-network"></div>
-    </div>
-
-    <div class="graph-sidebar" id="graph-sidebar">
-        <div class="sidebar-empty" id="sidebar-empty">
-            <p>👆 Click a node to see details</p>
-        </div>
-        <div class="sidebar-detail" id="sidebar-detail" style="display:none">
-            <div id="sidebar-type-badge" class="entity-badge"></div>
-            <h3 id="sidebar-title" style="margin-top: 0.5rem; font-size: 1.15rem; font-weight: 700;"></h3>
-            <div id="sidebar-body"></div>
-        </div>
-    </div>
+<div class="card card-panel">
+    <h2>System Snapshot</h2>
+    <ul class="stats-list">
+        <li><strong>Shops:</strong> {{ stats.shops }}</li>
+        <li><strong>Stations:</strong> {{ stats.stations }}</li>
+        <li><strong>Processes:</strong> {{ stats.processes }}</li>
+        <li><strong>Operations:</strong> {{ stats.operations }}</li>
+        <li><strong>Skills:</strong> {{ stats.skills }}</li>
+        <li><strong>Tools:</strong> {{ stats.tools }}</li>
+        <li><strong>Topics:</strong> {{ stats.topics }}</li>
+        <li><strong>Subtopics:</strong> {{ stats.subtopics }}</li>
+        <li><strong>Competency maps:</strong> {{ stats.mappings }}</li>
+    </ul>
 </div>
 
-<!-- Vis.js bundled locally (offline-safe) -->
-<script src="{{ url_for('static', filename='js/vis-network.min.js') }}"></script>
-<script>
-(function () {
-    const container = document.getElementById('graph-network');
-    const loading   = document.getElementById('graph-loading');
-    const sidebar   = document.getElementById('sidebar-detail');
-    const sidebarEmpty = document.getElementById('sidebar-empty');
-
-    fetch('/api/graph-data')
-        .then(r => r.json())
-        .then(data => {
-            loading.style.display = 'none';
-
-            if (!data.nodes || data.nodes.length === 0) {
-                container.innerHTML = '<div class="empty-state" style="padding:4rem"><p>No graph data yet.</p><p>Upload your datasets from the <a href="/admin">Admin Panel</a>.</p></div>';
-                return;
-            }
-
-            const options = {
-                nodes: {
-                    shape: 'dot',
-                    size: 16,
-                    font: { color: '#f8fafc', size: 12, face: 'Inter, system-ui, sans-serif' },
-                    borderWidth: 2,
-                    borderWidthSelected: 3,
-                },
-                edges: {
-                    color: { color: '#475569', opacity: 0.6 },
-                    font: { color: '#94a3b8', size: 10, align: 'middle' },
-                    smooth: { type: 'dynamic' },
-                    arrows: { to: { enabled: true, scaleFactor: 0.6 } },
-                },
-                physics: {
-                    stabilization: { iterations: 200 },
-                    barnesHut: { gravitationalConstant: -6000, springLength: 120 },
-                },
-                interaction: {
-                    hover: true,
-                    tooltipDelay: 200,
-                    navigationButtons: true,
-                    keyboard: true,
-                },
-                layout: { improvedLayout: true },
-            };
-
-            const network = new vis.Network(
-                container,
-                { nodes: new vis.DataSet(data.nodes), edges: new vis.DataSet(data.edges) },
-                options
-            );
-
-            network.on('click', function (params) {
-                if (params.nodes.length > 0) {
-                    const nodeId = params.nodes[0];
-                    const node = data.nodes.find(n => n.id === nodeId);
-                    if (!node) return;
-
-                    sidebarEmpty.style.display = 'none';
-                    sidebar.style.display = 'block';
-
-                    document.getElementById('sidebar-type-badge').textContent = node.group.toUpperCase();
-                    document.getElementById('sidebar-type-badge').className = 'entity-badge badge-' + node.group.toLowerCase();
-                    document.getElementById('sidebar-title').textContent = node.label;
-
-                    // Show connections
-                    const connected = network.getConnectedNodes(nodeId);
-                    const connectedNodes = connected.map(cid => {
-                        const cn = data.nodes.find(n => n.id === cid);
-                        return cn ? `<span class="sidebar-conn badge-${cn.group}">${cn.label}</span>` : '';
-                    }).filter(Boolean);
-
-                    document.getElementById('sidebar-body').innerHTML = `
-                        <p class="sidebar-desc">${node.title}</p>
-                        <div class="sidebar-meta">
-                            <strong>Type:</strong> ${node.group.toUpperCase()}<br>
-                            <strong>Connections:</strong> ${connected.length}
-                        </div>
-                        ${connectedNodes.length ? '<div class="sidebar-connections">' + connectedNodes.join(' ') + '</div>' : ''}
-                    `;
-                } else {
-                    sidebar.style.display = 'none';
-                    sidebarEmpty.style.display = 'block';
-                }
-            });
-        })
-        .catch(err => {
-            loading.innerHTML = '<p class="text-danger">Failed to load graph data.</p>';
-            console.error(err);
-        });
-})();
-</script>
+<div class="card card-panel">
+    <h2>Graph Explorer</h2>
+    <p>This route is available and ready for future knowledge graph visualization.
+       Current implementation provides a placeholder page so navigation works without an error.</p>
+</div>
 {% endblock %}

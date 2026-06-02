@@ -77,12 +77,12 @@
         <!-- Covered Topics -->
         {% if r.covered_topics %}
         <div class="sidebar-section">
-            <h3>✅ Covered Theory Topics</h3>
+            <h3>Covered Theory Topics</h3>
             {% for t in r.covered_topics %}
             <div class="topic-item">
                 <div class="topic-title">{{ t.topic_title }}</div>
                 <div class="topic-coverage-bar">
-                    <div class="coverage-fill" style="width:{{ t.coverage }}%"></div>
+                    <div class="coverage-fill" style="width:{{ t.coverage }}%"> </div>
                 </div>
                 <div class="topic-pct">{{ t.coverage }}%</div>
             </div>
@@ -93,7 +93,7 @@
         <!-- Missing Skills -->
         {% if r.missing_skills %}
         <div class="sidebar-section">
-            <h3>⚠️ Missing Competencies</h3>
+            <h3> Missing Competencies</h3>
             {% for s in r.missing_skills %}
             <div class="missing-skill">
                 <span class="skill-tag tag-missing">{{ s.skill_name }}</span>

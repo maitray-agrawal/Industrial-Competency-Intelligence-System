@@ -3,7 +3,6 @@ import atexit
 import hashlib
 import uuid as _uuid
 from flask import Flask, render_template, request, Response, redirect, url_for, flash, jsonify
-
 from werkzeug.utils import secure_filename
 
 from database import SessionLocal, engine, init_db
@@ -20,6 +19,7 @@ from data_engine import IngestionPipeline
 from heuristic_engine import KnowledgeMapper
 from competency_engine import CompetencyEngine
 from logger import get_logger
+from api_contracts import build_unified_search_entity
 from sqlalchemy import text, func
 
 logger = get_logger("FlaskApp")
@@ -37,9 +37,8 @@ ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
 
 DEBUG_MODE = os.environ.get("FLASK_ENV", "production").lower() == "development"
 
-0
 def allowed_file(filename: str) -> bool:
-    return os.path.splitext(filename.lower())[1] in ALLOWED_EXTENSIONS
+    return os.path.splitext(filename.lower()) in ALLOWED_EXTENSIONS or os.path.splitext(filename.lower())[1] in ALLOWED_EXTENSIONS
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +72,7 @@ def requires_auth(f):
 
 
 # ---------------------------------------------------------------------------
-# Error Handlers — prevents debugger page in production
+# Error Handlers
 # ---------------------------------------------------------------------------
 @app.errorhandler(404)
 def not_found(e):
@@ -144,54 +143,13 @@ def station_detail(station_id):
 
 @app.route("/graph")
 def graph():
-    return render_template("graph.html")
+    stats = _get_system_stats()
+    return render_template("graph.html", stats=stats)
 
 
 # ===========================================================================
-# ROUTES — API  (JSON endpoints for graph and competency dashboard)
+# ROUTES — API (JSON endpoints for graph and competency dashboard)
 # ===========================================================================
-
-@app.route("/api/graph-data")
-def api_graph_data():
-    """Return nodes and edges for the knowledge graph visualization."""
-    nodes = []
-    edges = []
-
-    # Colour palette per entity type
-    COLOR = {
-        "shop":      "#3b82f6",  # blue
-        "station":   "#06b6d4",  # cyan
-        "process":   "#10b981",  # green
-        "operation": "#f59e0b",  # amber
-        "skill":     "#f97316",  # orange
-        "tool":      "#ef4444",  # red
-        "subject":   "#a855f7",  # purple
-        "topic":     "#ec4899",  # pink
-        "semester":  "#64748b",  # slate
-        "diploma":   "#475569",  # slate-dark
-    }
-
-    with SessionLocal() as session:
-        db_nodes = session.query(GraphEntity).all()
-        for ent in db_nodes:
-            nodes.append({
-                "id":    ent.id,
-                "label": ent.name[:30] + ("..." if len(ent.name) > 30 else ""),
-                "title": f"[{ent.entity_type.upper()}] {ent.name}",
-                "group": ent.entity_type.lower(),
-                "color": COLOR.get(ent.entity_type.lower(), "#94a3b8")
-            })
-
-        db_relationships = session.query(GraphRelationship).all()
-        for rel in db_relationships:
-            edges.append({
-                "from":  rel.source_id,
-                "to":    rel.target_id,
-                "label": f"{rel.rel_type} ({round(rel.weight, 2)})"
-            })
-
-    return jsonify({"nodes": nodes, "edges": edges})
-
 
 @app.route("/api/competency/<int:station_id>")
 def api_competency(station_id):
@@ -211,6 +169,27 @@ def api_stats():
     return jsonify(_get_system_stats())
 
 
+@app.route("/api/entity-details/<entity_type>/<entity_id>")
+def api_entity_details(entity_type, entity_id):
+    """
+    Polymorphic endpoint resolving incoming compound string tokens (e.g., 'tool-21')
+    to database integer primary keys safely to support all four parameter matrices.
+    """
+    try:
+        if isinstance(entity_id, str) and "-" in entity_id:
+            clean_id = int(entity_id.split("-")[-1])
+        else:
+            clean_id = int(entity_id)
+    except (ValueError, IndexError, TypeError):
+        logger.error(f"Malformed structural routing key received: {entity_id}")
+        return jsonify({"error": f"Invalid database lookup format: {entity_id}"}), 400
+
+    unified = build_unified_search_entity(entity_type, clean_id)
+    if unified is None:
+        return jsonify({"error": f"Entity contract mapping missing for: {entity_type} #{entity_id}"}), 404
+    return jsonify(unified)
+
+
 # ===========================================================================
 # ROUTES — Admin (requires auth)
 # ===========================================================================
@@ -226,8 +205,6 @@ def admin():
             .limit(100)
             .all()
         )
-        # Batch summary for audit view
-        # NOTE: .cast() requires a SQLAlchemy type, NOT a Python builtin.
         batch_summary = (
             session.query(
                 StagingData.batch_id,
@@ -257,7 +234,6 @@ def admin():
 @app.route("/admin/ingest", methods=["POST"])
 @requires_auth
 def ingest():
-    # ── 1. Presence check 
     if "file" not in request.files:
         flash("No file part in request.", "danger")
         return redirect(url_for("admin"))
@@ -267,7 +243,6 @@ def ingest():
         flash("No file selected.", "danger")
         return redirect(url_for("admin"))
 
-    # ── 2. Extension whitelist (BEFORE touching disk)
     if not allowed_file(file.filename):
         flash(
             f"❌ Rejected '{file.filename}': only .xlsx and .xls files are accepted.",
@@ -276,20 +251,18 @@ def ingest():
         logger.warning(f"Upload rejected — invalid extension: {file.filename}")
         return redirect(url_for("admin"))
 
-    # ── 3. Calculate SHA-256 of file stream to prevent duplicate ingestion ─
     try:
         sha256_hash = hashlib.sha256()
         file.seek(0)
         for chunk in iter(lambda: file.read(4096), b""):
             sha256_hash.update(chunk)
         file_hash = sha256_hash.hexdigest()
-        file.seek(0)  # reset pointer for saving
+        file.seek(0)  
     except Exception as hash_err:
         flash(f"❌ Failed to compute file hash: {hash_err}", "danger")
         logger.error(f"SHA-256 calculation error: {hash_err}")
         return redirect(url_for("admin"))
 
-    # Verify duplicate hash in registry
     with SessionLocal() as session:
         existing = session.query(UploadedFile).filter_by(file_hash=file_hash).first()
         if existing:
@@ -297,13 +270,11 @@ def ingest():
             logger.info(f"Duplicate upload blocked: '{file.filename}' matches '{existing.filename}'")
             return redirect(url_for("admin"))
 
-    # ── 4. Sanitize filename + make unique to prevent overwrites 
     original_name = secure_filename(file.filename)
     stem, ext = os.path.splitext(original_name)
     unique_name = f"{stem}_{_uuid.uuid4().hex[:8]}{ext}"
     filepath = os.path.join(UPLOAD_FOLDER, unique_name)
 
-    # ── 5. Save to upload folder 
     try:
         file.save(filepath)
     except Exception as save_err:
@@ -311,13 +282,12 @@ def ingest():
         logger.error(f"File save error: {save_err}")
         return redirect(url_for("admin"))
 
-    # ── 6. Validate that the file is a readable Excel workbook 
     try:
         import pandas as _pd
-        _pd.read_excel(filepath, nrows=1)   # lightweight probe — just read header row
+        _pd.read_excel(filepath, nrows=1)   
     except Exception as probe_err:
         if os.path.exists(filepath):
-            os.remove(filepath)   # discard corrupt / non-Excel file
+            os.remove(filepath)   
         flash(
             f"❌ '{original_name}' could not be read as an Excel workbook: {probe_err}",
             "danger",
@@ -325,28 +295,23 @@ def ingest():
         logger.warning(f"Excel probe failed for '{original_name}': {probe_err}")
         return redirect(url_for("admin"))
 
-    # ── 7. Run ETL pipeline 
     source_type = request.form.get("source_type", "auto")
     try:
         logger.info(f"Admin ingestion: file='{original_name}' type='{source_type}'")
         stats = IngestionPipeline.ingest_excel(filepath, source_type)
         logger.info(f"ETL stats: {stats}")
 
-        # ── 8. Recompute mappings
         mapper = KnowledgeMapper()
         map_stats = mapper.run()
         logger.info(f"Mapping stats: {map_stats}")
 
-        # ── 9. Rebuild FTS5 search index 
         index_count = SearchIndexer.rebuild_index()
         logger.info(f"Search index rebuilt: {index_count} documents")
 
-        # ── 10. Rebuild Knowledge Graph Cache 
         from graph_engine import rebuild_knowledge_graph
         graph_stats = rebuild_knowledge_graph()
         logger.info(f"Knowledge Graph sync: {graph_stats}")
 
-        # ── 11. Add to Uploaded Registry 
         with SessionLocal() as session:
             db_file = UploadedFile(
                 filename=original_name,
@@ -360,13 +325,12 @@ def ingest():
             f"ETL: {stats} | Mappings: {map_stats} | Graph Nodes: {graph_stats['nodes']}",
             "success",
         )
-        3
 
     except ValueError as ve:
         if os.path.exists(filepath):
             os.remove(filepath)
         flash(f"⚠️ Validation error: {ve}", "danger")
-        logger.warning(f"Ingestion validation error for '{original_name}': {ve}")
+        logger.warning(f"Metrology or format error for '{original_name}': {ve}")
     except Exception as e:
         if os.path.exists(filepath):
             os.remove(filepath)
@@ -406,16 +370,8 @@ def remap():
 @app.route("/admin/reset-db", methods=["POST"])
 @requires_auth
 def reset_db():
-    """
-    Wipes all industrial domain tables and re-runs ETL from the last uploaded station file.
-    Use this after fixing ETL logic to regenerate clean, correct station data.
-    """
     try:
-        from database import Base, engine as _engine
-        import sqlalchemy
-
         with SessionLocal() as session:
-            # Delete all domain data in dependency order (leaves → roots)
             session.query(StationOperationMap).delete()
             session.query(SkillStationMap).delete()
             session.query(ToolStationMap).delete()
@@ -425,7 +381,7 @@ def reset_db():
             session.query(GraphEntity).delete()
             session.query(StagingData).delete()
             session.query(UploadedFile).delete()
-            # Domain entities
+            
             from models import Subtopic, Topic, Semester, Diploma
             from models import Skill, Tool, Operation, Process, Station, Shop
             session.query(Subtopic).delete()
@@ -439,89 +395,43 @@ def reset_db():
             session.query(Station).delete()
             session.query(Shop).delete()
             session.commit()
-            logger.info("Database reset complete.")
+            logger.info("Database domain reset completed.")
 
-        # Re-run on every xlsx in uploads folder
         re_ingested = 0
         for fname in os.listdir(UPLOAD_FOLDER):
             if fname.lower().endswith((".xlsx", ".xls")):
                 fpath = os.path.join(UPLOAD_FOLDER, fname)
                 try:
-                    stats = IngestionPipeline.ingest_excel(fpath)
-                    mapper = KnowledgeMapper()
-                    mapper.run()
-                    SearchIndexer.rebuild_index()
-                    from graph_engine import rebuild_knowledge_graph
-                    rebuild_knowledge_graph()
+                    IngestionPipeline.ingest_excel(fpath)
                     re_ingested += 1
-                    logger.info(f"Re-ingested: {fname} — {stats}")
                 except Exception as fe:
-                    logger.error(f"Re-ingest failed for {fname}: {fe}", exc_info=True)
+                    logger.error(f"Auto re-ingest failed for {fname}: {fe}")
 
-        flash(
-            f"✅ Database reset and re-ingested {re_ingested} file(s). "
-            "Station IDs, tools, and mappings are now correct.",
-            "success"
-        )
+        mapper = KnowledgeMapper()
+        mapper.run()
+        SearchIndexer.rebuild_index()
+        from graph_engine import rebuild_knowledge_graph
+        rebuild_knowledge_graph()
+
+        flash(f"✅ Clean database reload finished. Processed {re_ingested} layout files.", "success")
     except Exception as e:
-        flash(f"❌ Reset failed: {e}", "danger")
-        logger.error(f"DB reset failed: {e}", exc_info=True)
+        flash(f"❌ Reset execution aborted: {e}", "danger")
+        logger.error(f"DB master clean sequence failed: {e}", exc_info=True)
     return redirect(url_for("admin"))
 
 
-# ===========================================================================
-# NEW API ENDPOINTS — ADVANCED SEARCH FLOW & CARD EXPANSIONS
-# ===========================================================================
-
-@app.route("/api/search-expand")
-def api_search_expand():
-    """
-    Run FTS5 search then recursively expand neighbors (depth 2)
-    to return a connected Vis.js compatible graph for search query.
-    """
-    q = request.args.get("q", "").strip()
-    if not q:
-        return jsonify({"direct_matches": [], "graph": {"nodes": [], "edges": []}})
-
-    from graph_engine import GraphRelationshipEngine
-    data = GraphRelationshipEngine.search_and_expand_ecosystem(q)
-    return jsonify(data)
-
-
-@app.route("/api/entity-details/<string:entity_type>/<int:entity_id>")
-def api_entity_details(entity_type, entity_id):
-    """
-    Returns full detailed connectivity profile of an entity for clickable expandable cards.
-    """
-    from graph_engine import GraphRelationshipEngine
-    profile = GraphRelationshipEngine.get_expanded_card_details(entity_type, entity_id)
-    return jsonify(profile)
-
-
-# ===========================================================================
-# WAL CHECKPOINT ON CLEAN SHUTDOWN
-# ===========================================================================
 def _wal_checkpoint():
     try:
         with engine.connect() as conn:
             conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
-            logger.info("WAL checkpoint completed on shutdown.")
+            logger.info("WAL checkpoint finalized safely on shutdown sequence.")
     except Exception as e:
-        logger.warning(f"WAL checkpoint failed: {e}")
+        logger.warning(f"WAL checkpoint failure: {e}")
 
 
 atexit.register(_wal_checkpoint)
 
-
-# ===========================================================================
-# ENTRY POINT
-# ===========================================================================
 if __name__ == "__main__":
     init_db()
-    logger.info(f"Starting IIK-CME server. DEBUG={DEBUG_MODE}")
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=DEBUG_MODE,
-        use_reloader=DEBUG_MODE,
-    )
+    logger.info(f"Starting IIK-CME production server on port 5000. DEBUG={DEBUG_MODE}")
+    app.run(host="0.0.0.0", port=5000, debug=DEBUG_MODE, use_reloader=DEBUG_MODE)
