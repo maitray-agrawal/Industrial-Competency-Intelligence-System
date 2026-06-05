@@ -146,11 +146,6 @@ def graph():
     stats = _get_system_stats()
     return render_template("graph.html", stats=stats)
 
-
-# ===========================================================================
-# ROUTES — API (JSON endpoints for graph and competency dashboard)
-# ===========================================================================
-
 @app.route("/api/competency/<int:station_id>")
 def api_competency(station_id):
     return jsonify(CompetencyEngine.score_station_readiness(station_id))

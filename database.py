@@ -6,7 +6,6 @@ from logger import get_logger
 
 logger = get_logger("DatabaseManager")
 
-# Establish deterministic local path for SQLite DB
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "industrial_knowledge.sqlite")
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
@@ -14,10 +13,9 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 engine = create_engine(
     DATABASE_URL,
     echo=False,
-    connect_args={"check_same_thread": False} # Required for SQLite if sharing across threads
+    connect_args={"check_same_thread": False} 
 )
 
-# Enforce SQLite PRAGMAs for performance (WAL) and integrity (Foreign Keys)
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
     try:
