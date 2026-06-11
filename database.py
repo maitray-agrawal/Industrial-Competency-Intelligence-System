@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.engine import Engine
@@ -7,7 +8,9 @@ from logger import get_logger
 logger = get_logger("DatabaseManager")
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "industrial_knowledge.sqlite")
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+# Normalize path for SQLite URL (Windows uses backslashes which break URLs)
+DB_PATH_NORMALIZED = DB_PATH.replace("\\", "/")
+DATABASE_URL = f"sqlite:///{DB_PATH_NORMALIZED}"
 
 # Create the Engine
 engine = create_engine(

@@ -45,6 +45,8 @@ Industrial-Knowledge-System/
 ```
 
 ## Installation
+
+### Linux / macOS
 1. Open a terminal in the project folder.
 2. Create and activate a Python virtual environment:
    ```bash
@@ -56,13 +58,51 @@ Industrial-Knowledge-System/
    pip install -r requirements.txt
    ```
 
+### Windows
+1. Open PowerShell or Command Prompt in the project folder.
+2. Create and activate a Python virtual environment:
+   ```cmd
+   python -m venv venv
+   venv\Scripts\activate.bat
+   ```
+   Or in PowerShell:
+   ```powershell
+   python -m venv venv
+   .\venv\Scripts\Activate.ps1
+   ```
+3. Install dependencies:
+   ```cmd
+   pip install -r requirements.txt
+   ```
+
 ## Running the application
+
+### Linux / macOS
 Start the Flask server:
 ```bash
+./run.sh
+```
+
+### Windows
+Use one of the following methods:
+
+**Method 1: Batch script (Command Prompt)**
+```cmd
+run.bat
+```
+
+**Method 2: PowerShell script**
+```powershell
+.\run.ps1
+```
+
+**Method 3: Manual activation**
+```cmd
+venv\Scripts\activate.bat
 python app.py
 ```
 
-Open a browser and visit:
+Then open a browser and visit:
 * `http://127.0.0.1:5000` — Dashboard
 * `http://127.0.0.1:5000/search` — Search and graph explorer
 * `http://127.0.0.1:5000/admin` — Admin ingest panel
