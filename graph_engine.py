@@ -1,13 +1,3 @@
-"""
-graph_engine.py
----------------
-Unified Industrial Knowledge Graph Engine for IIK-CME.
-Handles:
-  1. Synchronizing all domain records to unified `entities` and `relationships` tables.
-  2. Traversal traversal algorithms (BFS/DFS, weighted path connections).
-  3. Interactive dynamic details fetching for clickable expandable cards.
-"""
-
 from collections import deque
 from sqlalchemy.orm import Session
 from database import SessionLocal

@@ -47,11 +47,11 @@ class StagingData(Base):
 
 
 # =============================================================================
-# CORE INDUSTRIAL ENTITIES  (from complete_trim_station_data.xlsx)
+# CORE INDUSTRIAL ENTITIES 
 # =============================================================================
 
 class Shop(Base):
-    """Manufacturing shop / plant area (e.g. TCF, Body Frame, Paint)."""
+    """Manufacturing shop / plant area (e.g. TCF, Body Frame, Paint,Weld)."""
     __tablename__ = "shops"
 
     id         = Column(Integer, primary_key=True, index=True)

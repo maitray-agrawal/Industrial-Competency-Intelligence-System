@@ -1,12 +1,3 @@
-"""
-competency_engine.py
----------------------
-Station-level Competency Intelligence Engine for IIK-CME.
-
-Provides readiness scoring, gap analysis, and theory module recommendations
-based on the skill-theory mappings computed by KnowledgeMapper.
-"""
-
 from __future__ import annotations
 from logger import get_logger
 from database import SessionLocal

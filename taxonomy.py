@@ -1,13 +1,3 @@
-"""
-taxonomy.py
------------
-Industrial Taxonomy Normalization Layer.
-
-Provides a deterministic, offline abbreviation dictionary and normalization
-utilities for industrial terminology found in manufacturing Excel datasets.
-Runs zero external dependencies — pure Python stdlib only.
-"""
-
 import re
 import unicodedata
 from typing import Optional

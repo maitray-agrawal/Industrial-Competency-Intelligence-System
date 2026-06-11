@@ -1,22 +1,3 @@
-"""
-data_engine.py
---------------
-Typed Excel ETL Pipeline for the IIK-CME system.
-
-Two dataset handlers:
-  - StationDataETL  → complete_trim_station_data.xlsx
-  - TCFDataETL      → TCF_1.xlsx
-
-Pipeline:
-  1. Read Excel sheet
-  2. Auto-detect dataset type from column headers
-  3. Validate required columns
-  4. Normalize cell values via TaxonomyNormalizer
-  5. Detect and skip duplicates
-  6. Stage raw rows (audit trail)
-  7. Upsert into golden record tables
-"""
-
 import os
 import uuid
 import hashlib

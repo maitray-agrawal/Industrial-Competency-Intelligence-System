@@ -1,24 +1,3 @@
-"""
-heuristic_engine.py
---------------------
-Multidirectional Knowledge Mapping Engine for IIK-CME.
-
-Maps theory (Topics/Subtopics) to industrial entities (Skills/Operations)
-using three strategies, in order of precision:
-
-  1. Exact keyword match  — skill_part field is shared between both datasets.
-                            Direct join on normalized skill_part text.
-  2. TF-IDF cosine sim   — subtopic.title + matched_operation vs
-                            operation.name + operation_summary
-  3. Weighted rule score — bonus for matching station codes / shop names
-                            appearing in topic content.
-
-All scores are upserted into:
-  - skill_operation_map   (skill ↔ operation)
-  - topic_skill_map       (topic ↔ skill)
-  - competency_map        (station ↔ skill ↔ topic coverage)
-"""
-
 from __future__ import annotations
 
 import re
