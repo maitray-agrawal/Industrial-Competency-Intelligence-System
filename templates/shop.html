@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}{{ shop.name }} — Shop Overview{% endblock %}
+
+{% block content %}
+
+<!-- Breadcrumb -->
+<nav class="breadcrumb-bar" aria-label="Breadcrumb">
+    <a href="{{ url_for('index') }}" class="breadcrumb-link">Dashboard</a>
+    <span class="breadcrumb-sep">›</span>
+    {% if subgroup %}
+        <a href="{{ url_for('shop_detail', shop_code=shop.shop_code) }}" class="breadcrumb-link">{{ shop.name }}</a>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current">{{ subgroup }}</span>
+    {% else %}
+        <span class="breadcrumb-current">{{ shop.name }}</span>
+    {% endif %}
+</nav>
+
+<!-- Shop Header -->
+<div class="shop-page-header fade-in">
+    <div class="shop-page-meta">
+        <span class="entity-badge badge-shop">SHOP</span>
+        <code class="shop-page-code">{{ shop.shop_code }}</code>
+        {% if subgroup %}
+        <span class="entity-badge badge-station">{{ subgroup }}</span>
+        {% endif %}
+    </div>
+    <h1>{{ shop.name }}{% if subgroup %} — {{ subgroup }}{% endif %}</h1>
+    <p>
+        {% if subgroups %}
+            {# BIW selector mode: show group count #}
+            {{ subgroups | length }} BIW Group{% if subgroups | length != 1 %}s{% endif %} &mdash;
+            {% set total_stns = namespace(n=0) %}
+            {% for g in subgroups %}{% set total_stns.n = total_stns.n + g.station_count %}{% endfor %}
+            {{ total_stns.n }} Station{% if total_stns.n != 1 %}s{% endif %}
+        {% elif hierarchy %}
+            {# Tree mode: count from hierarchy #}
+            {{ hierarchy | length }} Cell{% if hierarchy | length != 1 %}s{% endif %} &mdash;
+            {% set total_zones = namespace(n=0) %}
+            {% set total_stns  = namespace(n=0) %}
+            {% for cell in hierarchy %}
+                {% for zone in cell.zones %}
+                    {% set total_zones.n = total_zones.n + 1 %}
+                    {% set total_stns.n  = total_stns.n  + zone.stations | length %}
+                {% endfor %}
+            {% endfor %}
+            {{ total_zones.n }} Line = Zone{% if total_zones.n != 1 %}s{% endif %} &mdash;
+            {{ total_stns.n }} Station{% if total_stns.n != 1 %}s{% endif %}
+        {% endif %}
+    </p>
+</div>
+
+{% if subgroups %}
+<!-- BIW Group Selector Cards -->
+<div class="shop-cards-grid fade-in">
+    {% for grp in subgroups %}
+    <a
+        href="{{ url_for('shop_subgroup', shop_code=shop.shop_code, subgroup=grp.key) }}"
+        class="shop-card"
+        id="biw-card-{{ grp.key | lower }}"
+    >
+        <div class="shop-card-icon">{{ grp.icon }}</div>
+        <div class="shop-card-name">{{ grp.label }}</div>
+        <div class="shop-card-desc">{{ grp.desc }}</div>
+        <div class="shop-card-desc" style="margin-top:.25rem; font-weight:700; color:var(--tata-blue-dark);">{{ grp.station_count }} station{% if grp.station_count != 1 %}s{% endif %}</div>
+    </a>
+    {% endfor %}
+</div>
+
+{% else %}
+<!-- Tree Search -->
+<div class="tree-search-bar fade-in">
+    <input
+        type="text"
+        id="tree-search-input"
+        class="search-input"
+        placeholder="Filter stations, line = zones, cells…"
+        autocomplete="off"
+        oninput="filterTree(this.value)"
+    >
+</div>
+
+<!-- Expandable Tree -->
+<div class="shop-tree fade-in" id="shop-tree" role="tree">
+    {% if hierarchy %}
+        {% for cell in hierarchy %}
+        <details class="tree-line" open data-label="{{ cell.label | lower }}">
+            <summary class="tree-line-summary" role="treeitem" aria-expanded="true">
+                <span class="tree-toggle-icon">▶</span>
+                <span class="tree-line-icon">🔁</span>
+                <span class="tree-node-label">{{ cell.label }}</span>
+                <span class="tree-node-count">
+                    {% set zc = cell.zones | length %}
+                    {% set sc = namespace(n=0) %}
+                    {% for z in cell.zones %}{% set sc.n = sc.n + z.stations | length %}{% endfor %}
+                    {{ zc }} Line = Zone{% if zc != 1 %}s{% endif %}, {{ sc.n }} station{% if sc.n != 1 %}s{% endif %}
+                </span>
+            </summary>
+
+            <div class="tree-line-body">
+                {% for zone in cell.zones %}
+                <details class="tree-zone" open data-label="{{ zone.label | lower }}">
+                    <summary class="tree-zone-summary" role="treeitem" aria-expanded="true">
+                        <span class="tree-toggle-icon">▶</span>
+                        <span class="tree-zone-icon">📍</span>
+                        <span class="tree-node-label">{{ zone.label }}</span>
+                        <span class="tree-node-count">
+                            {{ zone.stations | length }} station{% if zone.stations | length != 1 %}s{% endif %}
+                        </span>
+                    </summary>
+
+                    <div class="tree-zone-body">
+                        {% for stn in zone.stations %}
+                        <a
+                            href="{{ url_for('station_detail', station_id=stn.id) }}"
+                            class="tree-station"
+                            id="tree-stn-{{ stn.id }}"
+                            data-label="{{ stn.raw_id | lower }} {{ stn.name | lower }}"
+                            role="treeitem"
+                        >
+                            <span class="tree-station-icon">🔧</span>
+                            <span class="tree-station-code">{{ stn.raw_id }}</span>
+                            {% if stn.name and stn.name != stn.raw_id %}
+                            <span class="tree-station-name">{{ stn.name }}</span>
+                            {% endif %}
+                            <span class="tree-station-arrow">→</span>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </details>
+                {% endfor %}
+            </div>
+        </details>
+        {% endfor %}
+    {% else %}
+    <div class="empty-state">
+        <p>No station hierarchy data found for this shop.</p>
+        <p>Upload station data via the <a href="{{ url_for('admin') }}">Admin Panel</a>.</p>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<div style="margin-top: 2.5rem;">
+    <a href="{{ url_for('index') }}" class="secondary-btn">← Back to Dashboard</a>
+</div>
+
+<script>
+    // Expand/collapse animation enhancement
+    document.querySelectorAll('details').forEach(el => {
+        el.addEventListener('toggle', function () {
+            const icon = this.querySelector(':scope > summary .tree-toggle-icon');
+            if (icon) icon.textContent = this.open ? '▼' : '▶';
+        });
+        // Set initial icon state
+        const icon = el.querySelector(':scope > summary .tree-toggle-icon');
+        if (icon) icon.textContent = el.open ? '▼' : '▶';
+    });
+
+    // Tree search filter
+    function filterTree(query) {
+        const q = query.trim().toLowerCase();
+        const lines = document.querySelectorAll('.tree-line');
+
+        lines.forEach(lineEl => {
+            let lineHasMatch = false;
+            const zones = lineEl.querySelectorAll('.tree-zone');
+
+            zones.forEach(zoneEl => {
+                let zoneHasMatch = false;
+                const stations = zoneEl.querySelectorAll('.tree-station');
+
+                stations.forEach(stnEl => {
+                    const label = stnEl.dataset.label || '';
+                    const match = !q || label.includes(q);
+                    stnEl.style.display = match ? '' : 'none';
+                    if (match) zoneHasMatch = true;
+                });
+
+                // Also match zone label
+                const zoneLabel = (zoneEl.dataset.label || '');
+                if (!q || zoneLabel.includes(q)) { zoneHasMatch = true; }
+
+                zoneEl.style.display = zoneHasMatch ? '' : 'none';
+                if (zoneHasMatch) {
+                    lineHasMatch = true;
+                    if (q) zoneEl.open = true;
+                }
+            });
+
+            // Also match line label
+            const lineLabel = (lineEl.dataset.label || '');
+            if (!q || lineLabel.includes(q)) lineHasMatch = true;
+
+            lineEl.style.display = lineHasMatch ? '' : 'none';
+            if (lineHasMatch && q) lineEl.open = true;
+
+            // Restore all when query is cleared
+            if (!q) {
+                lineEl.style.display = '';
+                zones.forEach(z => {
+                    z.style.display = '';
+                    z.querySelectorAll('.tree-station').forEach(s => s.style.display = '');
+                });
+            }
+        });
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+{% block title %}Station — {{ profile.station_code }}{% endblock %}
+
+{% block content %}
+{% set r = profile.readiness %}
+
+<!-- Breadcrumb -->
+<nav class="breadcrumb-bar" aria-label="Breadcrumb">
+    <a href="{{ url_for('index') }}" class="breadcrumb-link">Dashboard</a>
+    <span class="breadcrumb-sep">›</span>
+    {% if shop_code %}
+    <a href="{{ url_for('shop_detail', shop_code=shop_code) }}" class="breadcrumb-link">{{ profile.shop }}</a>
+    <span class="breadcrumb-sep">›</span>
+    {% endif %}
+    <span class="breadcrumb-current">{{ profile.station_code }}</span>
+</nav>
+
+<!-- Station Header -->
+<div class="station-header fade-in">
+    <div class="station-meta">
+        <span class="entity-badge badge-station">STATION</span>
+        <span class="station-shop">{{ profile.shop }}</span>
+    </div>
+    <h1>{{ profile.station_code }}</h1>
+    <p>{{ profile.station_name }}</p>
+</div>
+
+<!-- Tab Navigation -->
+<nav class="tab-nav" id="stn-tab-nav" role="tablist" aria-label="Station sections">
+    <button class="tab-btn active" onclick="switchTab('info',this)"    id="tab-info"     role="tab">📋 Basic Info</button>
+    <button class="tab-btn"        onclick="switchTab('proc',this)"    id="tab-proc"     role="tab">⚙️ Processes</button>
+    <button class="tab-btn"        onclick="switchTab('tools',this)"   id="tab-tools"    role="tab">🛠️ Tools</button>
+    <button class="tab-btn"        onclick="switchTab('skills',this)"  id="tab-skills"   role="tab">💡 Skills</button>
+    <button class="tab-btn"        onclick="switchTab('training',this)"id="tab-training" role="tab">📚 Training</button>
+    <button class="tab-btn"        onclick="switchTab('graph',this)"   id="tab-graph"    role="tab">🕸️ Knowledge Graph</button>
+</nav>
+
+<!-- ══════════════════════ TAB 1: BASIC INFO ══════════════════════ -->
+<div class="stn-tab-panel fade-in" id="panel-info" role="tabpanel">
+
+    <!-- Readiness Banner -->
+    <div class="readiness-banner {% if r.readiness_pct >= 75 %}banner-good{% elif r.readiness_pct >= 40 %}banner-mid{% else %}banner-low{% endif %}">
+        <div class="readiness-score-big">{{ r.readiness_pct }}%</div>
+        <div class="readiness-info">
+            <strong>Theory Coverage Readiness</strong>
+            <p>{{ r.covered_skills }} of {{ r.total_skills }} required skills covered by theory modules.</p>
+        </div>
+    </div>
+
+    <!-- Info Grid -->
+    <div class="stn-info-grid">
+        <div class="stn-info-card">
+            <div class="stn-info-label">Station Code</div>
+            <div class="stn-info-value mono">{{ profile.station_code }}</div>
+        </div>
+        <div class="stn-info-card">
+            <div class="stn-info-label">Shop / Plant Area</div>
+            <div class="stn-info-value">{{ profile.shop }}</div>
+        </div>
+        <div class="stn-info-card">
+            <div class="stn-info-label">Station Name</div>
+            <div class="stn-info-value">{{ profile.station_name }}</div>
+        </div>
+        <div class="stn-info-card">
+            <div class="stn-info-label">Total Skills Required</div>
+            <div class="stn-info-value">{{ r.total_skills }}</div>
+        </div>
+        <div class="stn-info-card">
+            <div class="stn-info-label">Skills Covered</div>
+            <div class="stn-info-value" style="color:var(--green)">{{ r.covered_skills }}</div>
+        </div>
+        <div class="stn-info-card">
+            <div class="stn-info-label">Skills Gap</div>
+            <div class="stn-info-value" style="color:var(--red)">{{ r.total_skills - r.covered_skills }}</div>
+        </div>
+        <div class="stn-info-card">
+            <div class="stn-info-label">Processes</div>
+            <div class="stn-info-value">{{ profile.processes | length }}</div>
+        </div>
+        <div class="stn-info-card">
+            <div class="stn-info-label">Tools Mapped</div>
+            <div class="stn-info-value">{{ profile.tools | length }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════ TAB 2: PROCESSES ══════════════════════ -->
+<div class="stn-tab-panel" id="panel-proc" role="tabpanel" hidden>
+    {% if profile.processes %}
+        {% for proc in profile.processes %}
+        <div class="process-card card fade-in" id="proc-{{ loop.index }}">
+            <div class="process-header">
+                <span class="entity-badge badge-process">PROCESS</span>
+                <strong>{{ proc.name }}</strong>
+                <code class="code-tag">{{ proc.process_code }}</code>
+            </div>
+            {% if proc.operations %}
+            <div class="operations-list">
+                {% for op in proc.operations %}
+                <div class="operation-row">
+                    <div class="op-name">{{ op.name }}</div>
+                    {% if op.operation_summary %}
+                    <div class="op-summary">{{ op.operation_summary }}</div>
+                    {% endif %}
+                    {% if op.skills %}
+                    <div class="op-skills">
+                        {% for s in op.skills %}
+                        <span class="skill-tag">{{ s }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="empty-state"><p>No processes defined for this station.</p></div>
+    {% endif %}
+</div>
+
+<!-- ══════════════════════ TAB 3: TOOLS ══════════════════════ -->
+<div class="stn-tab-panel" id="panel-tools" role="tabpanel" hidden>
+    {% if profile.tools %}
+    <div class="tools-grid" style="margin-top:1rem">
+        {% for tool in profile.tools %}
+        <div class="tool-chip">
+            <span class="entity-badge badge-tool">TOOL</span>
+            {{ tool.name }}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state"><p>No tool mapping available</p></div>
+    {% endif %}
+</div>
+
+<!-- ══════════════════════ TAB 4: SKILLS ══════════════════════ -->
+<div class="stn-tab-panel" id="panel-skills" role="tabpanel" hidden>
+    {% if skills_summary %}
+    <div class="stn-skills-legend">
+        <span class="skill-legend-dot legend-covered"></span> Covered by theory
+        <span class="skill-legend-dot legend-gap" style="margin-left:1.2rem"></span> Gap — no theory mapping
+    </div>
+    <div class="stn-skills-grid">
+        {% for sk in skills_summary %}
+        <div class="stn-skill-row {% if sk.covered %}skill-row-ok{% else %}skill-row-gap{% endif %}">
+            <span class="stn-skill-dot {% if sk.covered %}dot-ok{% else %}dot-gap{% endif %}"></span>
+            <span class="stn-skill-name">{{ sk.name }}</span>
+            <span class="stn-skill-badge {% if sk.covered %}badge-ok{% else %}badge-gap{% endif %}">
+                {% if sk.covered %}Covered{% else %}Gap{% endif %}
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state"><p>No skill mapping available</p></div>
+    {% endif %}
+</div>
+
+<!-- ══════════════════════ TAB 5: TRAINING ══════════════════════ -->
+<div class="stn-tab-panel" id="panel-training" role="tabpanel" hidden>
+    {% if r.covered_topics %}
+    <div class="section-header" style="margin-bottom:1.2rem">
+        <h2>Theory Coverage Map</h2>
+        <span class="results-count">{{ r.covered_topics | length }} topic{% if r.covered_topics | length != 1 %}s{% endif %} mapped</span>
+    </div>
+    <div class="stn-training-list">
+        {% for t in r.covered_topics %}
+        <div class="stn-training-row">
+            <div class="stn-training-header">
+                <span class="entity-badge badge-topic">TOPIC</span>
+                <span class="stn-training-code mono">{{ t.topic_code }}</span>
+                <span class="stn-training-pct">{{ t.coverage }}%</span>
+            </div>
+            <div class="stn-training-title">{{ t.topic_title }}</div>
+            <div class="topic-coverage-bar" style="margin-top:.5rem">
+                <div class="coverage-fill" style="width:{{ t.coverage }}%"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state"><p>Training mapping pending</p></div>
+    {% endif %}
+
+    {% if r.missing_skills %}
+    <div class="section-header" style="margin-top:2.5rem; margin-bottom:1.2rem">
+        <h2>Competency Gaps</h2>
+        <span class="results-count" style="background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:#dc2626">
+            {{ r.missing_skills | length }} unresolved
+        </span>
+    </div>
+    <div class="stn-skills-grid">
+        {% for s in r.missing_skills %}
+        <div class="stn-skill-row skill-row-gap">
+            <span class="stn-skill-dot dot-gap"></span>
+            <span class="stn-skill-name">{{ s.skill_name }}</span>
+            <span class="stn-skill-badge badge-gap">No Theory Map</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- ══════════════════════ TAB 6: KNOWLEDGE GRAPH ══════════════════════ -->
+<div class="stn-tab-panel" id="panel-graph" role="tabpanel" hidden>
+    <div class="stn-graph-legend">
+        <span class="legend-dot" style="background:#1E3A8A"></span> Station
+        <span class="legend-dot" style="background:#10b981;margin-left:.75rem"></span> Process
+        <span class="legend-dot" style="background:#8b5cf6;margin-left:.75rem"></span> Skill (covered)
+        <span class="legend-dot" style="background:#ef4444;margin-left:.75rem"></span> Skill (gap)
+        <span class="legend-dot" style="background:#06b6d4;margin-left:.75rem"></span> Theory Topic
+    </div>
+    <div id="stn-graph-canvas" class="stn-graph-canvas"></div>
+    <p style="font-size:.8rem;color:var(--text-dim);margin-top:.75rem;text-align:center">
+        Drag nodes to explore. Scroll to zoom.
+    </p>
+</div>
+
+<!-- Back button -->
+<div style="margin-top:2.5rem">
+    <a href="{{ url_for('index') }}" class="secondary-btn">← Back to Dashboard</a>
+</div>
+
+<!-- ── Scripts ── -->
+<script src="{{ url_for('static', filename='js/vis-network.min.js') }}"></script>
+<script>
+// ── Tab switching ──────────────────────────────────────────────────
+function switchTab(name, btn) {
+    document.querySelectorAll('.stn-tab-panel').forEach(p => p.hidden = true);
+    document.querySelectorAll('#stn-tab-nav .tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + name).hidden = false;
+    btn.classList.add('active');
+    if (name === 'graph' && !window._graphBuilt) buildGraph();
+}
+
+// ── Knowledge Graph ───────────────────────────────────────────────
+const _rawNodes  = {{ graph_nodes | tojson }};
+const _rawEdges  = {{ graph_edges | tojson }};
+
+const _GROUP_STYLES = {
+    station:   { color: { background:'#1E3A8A', border:'#0f1f5c', highlight:{background:'#2E5B91'} }, font:{color:'#fff', size:13, bold:true},  shape:'dot' },
+    process:   { color: { background:'#10b981', border:'#059669', highlight:{background:'#34d399'} }, font:{color:'#fff', size:11 }, shape:'dot' },
+    skill_ok:  { color: { background:'#8b5cf6', border:'#6d28d9', highlight:{background:'#a78bfa'} }, font:{color:'#fff', size:11 }, shape:'dot' },
+    skill_gap: { color: { background:'#ef4444', border:'#dc2626', highlight:{background:'#f87171'} }, font:{color:'#fff', size:11 }, shape:'dot' },
+    topic:     { color: { background:'#06b6d4', border:'#0891b2', highlight:{background:'#22d3ee'} }, font:{color:'#fff', size:11 }, shape:'dot' },
+};
+
+function buildGraph() {
+    window._graphBuilt = true;
+    const nodes = new vis.DataSet(_rawNodes.map(n => ({
+        ...n, ..._GROUP_STYLES[n.group] || {}
+    })));
+    const edges = new vis.DataSet(_rawEdges.map((e, i) => ({
+        id: i, from: e.from, to: e.to,
+        color: { color:'#d1dce6', highlight:'#3B7EC9' },
+        width: 1.5, smooth: { type:'continuous' }
+    })));
+    const container = document.getElementById('stn-graph-canvas');
+    new vis.Network(container, { nodes, edges }, {
+        physics: { solver:'forceAtlas2Based', forceAtlas2Based:{ gravitationalConstant:-60, springLength:120 }, stabilization:{iterations:200} },
+        interaction: { tooltipDelay:200, zoomView:true },
+        layout: { improvedLayout: true }
+    });
+}
+</script>
+{% endblock %}

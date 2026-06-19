@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Knowledge Graph — Industrial Knowledge Engine{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Knowledge Graph</h1>
+    <p class="lead">Visualize the industrial knowledge graph and competency relationships.</p>
+</div>
+
+<div class="card card-panel">
+    <h2>System Snapshot</h2>
+    <ul class="stats-list">
+        <li><strong>Shops:</strong> {{ stats.shops }}</li>
+        <li><strong>Stations:</strong> {{ stats.stations }}</li>
+        <li><strong>Processes:</strong> {{ stats.processes }}</li>
+        <li><strong>Operations:</strong> {{ stats.operations }}</li>
+        <li><strong>Skills:</strong> {{ stats.skills }}</li>
+        <li><strong>Tools:</strong> {{ stats.tools }}</li>
+        <li><strong>Topics:</strong> {{ stats.topics }}</li>
+        <li><strong>Subtopics:</strong> {{ stats.subtopics }}</li>
+        <li><strong>Competency maps:</strong> {{ stats.mappings }}</li>
+    </ul>
+</div>
+
+<div class="card card-panel">
+    <h2>Graph Explorer</h2>
+    <p>This route is available and ready for future knowledge graph visualization.
+       Current implementation provides a placeholder page so navigation works without an error.</p>
+</div>
+{% endblock %}

@@ -1,0 +1,563 @@
+{% extends "base.html" %}
+{% block title %}Admin Panel{% endblock %}
+
+{% block content %}
+<div class="admin-header">
+    <h1>⚙ Administration Panel</h1>
+    <p>Data ingestion, mapping engine control, audit log, and system health.</p>
+</div>
+
+<!-- Tab Nav -->
+<div class="tab-nav" id="admin-tabs">
+    <button class="tab-btn active" onclick="showTab('upload')" id="tab-upload">Upload Data</button>
+    <button class="tab-btn" onclick="showTab('controls')" id="tab-controls">Engine Controls</button>
+    <button class="tab-btn" onclick="showTab('audit')" id="tab-audit">Audit Log</button>
+    <button class="tab-btn" onclick="showTab('health')" id="tab-health">System Health</button>
+</div>
+
+<!-- Duplicate File Conflict Banner (shown when ?dup=1 is present) -->
+<div class="dup-banner" id="dup-banner" style="display:none">
+    <div class="dup-banner-icon">⚠️</div>
+    <div class="dup-banner-body">
+        <p class="dup-banner-title">Duplicate File Detected</p>
+        <p class="dup-banner-sub" id="dup-banner-msg">
+            This file was uploaded previously. Choose how to proceed:
+        </p>
+        <form action="{{ url_for('ingest_confirm') }}" method="POST" class="dup-actions" id="dup-confirm-form">
+            <button type="submit" name="dup_action" value="skip"
+                    class="secondary-btn" id="dup-skip-btn">
+                ✋ Skip — Keep Existing Data
+            </button>
+            <button type="submit" name="dup_action" value="reprocess"
+                    class="primary-btn" id="dup-reprocess-btn">
+                🔄 Reprocess — Update All Records
+            </button>
+        </form>
+    </div>
+    <button type="button" class="dup-dismiss" onclick="dismissDup()" id="dup-dismiss-btn"
+            title="Dismiss">✕</button>
+</div>
+
+<!-- TAB: Upload -->
+<div class="tab-pane active fade-in" id="pane-upload">
+
+    <!-- ── Step Indicator ─────────────────────────────────── -->
+    <div class="wizard-steps" id="wizard-steps">
+        <div class="wizard-step active" id="ws-1">
+            <span class="ws-num">1</span>
+            <span class="ws-label">Select Shop</span>
+        </div>
+        <div class="wizard-connector" id="wc-1"></div>
+        <div class="wizard-step" id="ws-2">
+            <span class="ws-num">2</span>
+            <span class="ws-label">Upload File</span>
+        </div>
+    </div>
+
+    <!-- ── STEP 1: Shop Selector ──────────────────────────── -->
+    <div id="wizard-step1">
+        <div class="upload-card">
+            <h2>Step 1 — Select Shop</h2>
+            <p class="upload-hint">Choose the manufacturing shop this dataset belongs to.</p>
+            <div class="shop-grid" id="shop-grid">
+                <button type="button" class="shop-tile" data-shop="TCF_1"     onclick="selectShop(this)">🏭<span>TCF 1</span></button>
+                <button type="button" class="shop-tile" data-shop="TCF_2"     onclick="selectShop(this)">🏭<span>TCF 2</span></button>
+                <button type="button" class="shop-tile" data-shop="PAINT_SHOP" onclick="selectShop(this)">🎨<span>Paint Shop</span></button>
+                <button type="button" class="shop-tile" data-shop="ENGINE_SHOP" onclick="selectShop(this)">⚙️<span>Engine Shop</span></button>
+                <button type="button" class="shop-tile" data-shop="TRANSAXLE_SHOP" onclick="selectShop(this)">🔩<span>Transaxle Shop</span></button>
+                <button type="button" class="shop-tile" data-shop="EV_SHOP"   onclick="selectShop(this)">⚡<span>EV Shop</span></button>
+                <button type="button" class="shop-tile" data-shop="JLR_SHOP"  onclick="selectShop(this)">🚘<span>JLR Shop</span></button>
+                <button type="button" class="shop-tile" data-shop="WELD_SHOP" onclick="selectShop(this)">🔥<span>Weld Shop</span></button>
+                <button type="button" class="shop-tile shop-tile-syllabus" data-shop="" onclick="selectShop(this)" data-type="tcf_data">📖<span>TCF Syllabus</span></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── STEP 2: File Upload ────────────────────────────── -->
+    <div id="wizard-step2" style="display:none">
+        <div class="upload-card">
+            <div class="step2-header">
+                <div>
+                    <h2>Step 2 — Upload File</h2>
+                    <p class="upload-hint">Uploading for: <strong id="selected-shop-label"></strong></p>
+                </div>
+                <button type="button" class="secondary-btn" id="back-btn" onclick="goBackToStep1()">← Change Shop</button>
+            </div>
+            <form action="{{ url_for('ingest') }}" method="POST" enctype="multipart/form-data"
+                  class="upload-form" id="upload-form">
+                <!-- Hidden fields carry shop + source_type to the backend -->
+                <input type="hidden" name="shop" id="hidden-shop" value="">
+                <input type="hidden" name="source_type" id="hidden-source-type" value="auto">
+
+                <!-- Upload Mode selector -->
+                <div class="form-group upload-mode-group">
+                    <label class="upload-mode-label">Upload Mode</label>
+                    <div class="mode-radio-row" id="upload-mode-row">
+                        <label class="mode-option" id="mode-insert">
+                            <input type="radio" name="upload_mode" value="insert_only">
+                            <span class="mode-icon">➕</span>
+                            <span class="mode-title">Insert Only</span>
+                            <span class="mode-desc">Add new records. Skip existing.</span>
+                        </label>
+                        <label class="mode-option" id="mode-update">
+                            <input type="radio" name="upload_mode" value="update_only">
+                            <span class="mode-icon">✏️</span>
+                            <span class="mode-title">Update Only</span>
+                            <span class="mode-desc">Overwrite existing. Ignore new.</span>
+                        </label>
+                        <label class="mode-option mode-option-recommended" id="mode-upsert">
+                            <input type="radio" name="upload_mode" value="upsert" checked>
+                            <span class="mode-badge">Recommended</span>
+                            <span class="mode-icon">⚡</span>
+                            <span class="mode-title">Upsert</span>
+                            <span class="mode-desc">Insert new + update existing.</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="file">Select Excel File</label>
+                    <div class="file-drop-zone" id="file-drop-zone">
+                        <input type="file" name="file" id="file" class="form-file-hidden"
+                               accept=".xlsx,.xls" onchange="updateFileLabel(this)">
+                        <label for="file" class="file-drop-label" id="file-drop-label">
+                            <span class="file-icon">📂</span>
+                            <span id="file-name-display">Drag &amp; drop or click to select .xlsx / .xls</span>
+                        </label>
+                    </div>
+                </div>
+                <button type="submit" class="primary-btn submit-upload" id="ingest-btn">
+                    ⚡ Ingest &amp; Normalize
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dataset Schema Reference -->
+    <div class="schema-ref-grid">
+        <div class="schema-card">
+            <h3>Shop Data Schema</h3>
+            <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 0.75rem 0;">
+                Column matching is case-, space-, and symbol-insensitive.<br>
+                Missing columns are stored as empty — upload will not be blocked.<br>
+                A warning is shown after upload listing any absent columns.
+            </p>
+            <table class="schema-table">
+                <tr><th>Column</th><th>Status</th></tr>
+                <tr><td><code>SHOP</code></td><td><span class="badge-req">Required</span></td></tr>
+                <tr><td><code>LINE</code></td><td><span class="badge-req">Required</span></td></tr>
+                <tr><td><code>STATIONS</code></td><td><span class="badge-req">Required</span></td></tr>
+                <tr><td><code>CELL</code></td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td><code>ZONE NO</code></td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td><code>PROCESS</code></td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td><code>TOOLS / EQUIPMENT</code></td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td><code>OPERATION SUMMARY</code></td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td><code>SKILL PART</code></td><td><span class="badge-opt">Optional</span></td></tr>
+            </table>
+        </div>
+        <div class="schema-card">
+            <h3>TCF Syllabus Schema</h3>
+            <table class="schema-table">
+                <tr><th>Column</th><th>Required</th></tr>
+                <tr><td>topic</td><td><span class="badge-req">Required</span></td></tr>
+                <tr><td>sub-topic</td><td><span class="badge-req">Required</span></td></tr>
+                <tr><td>diploma</td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td>semester</td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td>matched operation</td><td><span class="badge-opt">Optional</span></td></tr>
+                <tr><td>skill part</td><td><span class="badge-opt">Optional</span></td></tr>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- TAB: Engine Controls -->
+<div class="tab-pane fade-in" id="pane-controls" style="display:none">
+    <div class="controls-grid">
+        <div class="control-card">
+            <h3>Recompute Knowledge Mappings</h3>
+            <p>Re-runs TF-IDF + keyword mapping between theory topics and station skills. Run this after uploading both datasets.</p>
+            <form action="{{ url_for('remap') }}" method="POST" id="remap-form">
+                <button type="submit" class="primary-btn" id="remap-btn">Recompute Mappings</button>
+            </form>
+        </div>
+        <div class="control-card">
+            <h3>🔍 Rebuild Search Index</h3>
+            <p>Rebuilds the FTS5 full-text search index from all current golden records.</p>
+            <form action="{{ url_for('rebuild_index') }}" method="POST" id="rebuild-form">
+                <button type="submit" class="secondary-btn" id="rebuild-btn">Rebuild FTS5 Index</button>
+            </form>
+        </div>
+        <div class="control-card" style="border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.04);">
+            <h3 style="color: var(--red);">Reset &amp; Re-Ingest Database</h3>
+            <p style="font-size:0.85rem;">Wipes <strong>all</strong> industrial data and re-runs the ETL pipeline from uploaded files with corrected logic. Use this to fix station IDs, tool mappings, and relationships after an ETL bug fix.</p>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.4rem;"> This deletes all current entities and re-ingests from scratch.</p>
+            <form action="{{ url_for('reset_db') }}" method="POST" id="reset-db-form"
+                  onsubmit="return confirm(' This will DELETE all industrial data and re-ingest from uploaded files. Are you sure?');">
+                <button type="submit" class="primary-btn" id="reset-db-btn"
+                        style="background: linear-gradient(135deg,#dc2626,#b91c1c); box-shadow: 0 0 12px rgba(239,68,68,0.3);">
+                     Reset &amp; Re-Ingest
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- TAB: Audit Log -->
+<div class="tab-pane fade-in" id="pane-audit" style="display:none">
+
+    <!-- Upload History (primary — from uploaded_files registry) -->
+    <div class="audit-section">
+        <h2>Upload History</h2>
+        <table class="data-table" id="upload-history-table">
+            <thead>
+                <tr>
+                    <th>Shop</th>
+                    <th>Filename</th>
+                    <th>Upload Date</th>
+                    <th>Uploaded By</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for uf in upload_history %}
+                <tr>
+                    <td>
+                        {% if uf.shop_code %}
+                            <span class="entity-badge badge-station">{{ uf.shop_code.replace('_', ' ') }}</span>
+                        {% else %}
+                            <span class="entity-badge badge-topic">TCF Syllabus</span>
+                        {% endif %}
+                    </td>
+                    <td class="mono">{{ uf.filename }}</td>
+                    <td>{{ uf.upload_time.strftime('%Y-%m-%d %H:%M') if uf.upload_time else '—' }}</td>
+                    <td>
+                        <span class="uploader-chip">👤 {{ uf.uploaded_by or 'unknown' }}</span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="empty-state">No uploads recorded yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Batch Detail (secondary — ETL staging summary) -->
+    <div class="audit-section" style="margin-top: 2rem;">
+        <h2>ETL Batch Detail</h2>
+        <table class="data-table" id="batch-table">
+            <thead>
+                <tr>
+                    <th>Batch ID</th>
+                    <th>Dataset</th>
+                    <th>Total</th>
+                    <th>Processed</th>
+                    <th>Failed</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in batch_summary %}
+                <tr>
+                    <td class="mono">{{ b.batch_id[:12] }}...</td>
+                    <td><span class="entity-badge badge-{{ b.source_file.split('_')[0] }}">{{ b.source_file }}</span></td>
+                    <td>{{ b.total }}</td>
+                    <td><span class="text-success">{{ b.processed or 0 }}</span></td>
+                    <td><span class="text-danger">{{ b.failed or 0 }}</span></td>
+                    <td>{{ b.timestamp.strftime('%Y-%m-%d %H:%M') if b.timestamp else 'N/A' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="empty-state">No batch data yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- TAB: System Health -->
+<div class="tab-pane fade-in" id="pane-health" style="display:none">
+    <h2>System Health</h2>
+    <div class="stats-grid">
+        <div class="stat-card"><div class="stat-icon">🏭</div><div class="stat-value">{{ stats.shops }}</div><div class="stat-label">Shops</div></div>
+        <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">{{ stats.stations }}</div><div class="stat-label">Stations</div></div>
+        <div class="stat-card"><div class="stat-icon">⚙️</div><div class="stat-value">{{ stats.processes }}</div><div class="stat-label">Processes</div></div>
+        <div class="stat-card"><div class="stat-icon">🎯</div><div class="stat-value">{{ stats.operations }}</div><div class="stat-label">Operations</div></div>
+        <div class="stat-card"><div class="stat-icon">💡</div><div class="stat-value">{{ stats.skills }}</div><div class="stat-label">Skills</div></div>
+        <div class="stat-card"><div class="stat-icon">🛠️</div><div class="stat-value">{{ stats.tools }}</div><div class="stat-label">Tools</div></div>
+        <div class="stat-card"><div class="stat-icon">📚</div><div class="stat-value">{{ stats.topics }}</div><div class="stat-label">Topics</div></div>
+        <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value">{{ stats.mappings }}</div><div class="stat-label">Competency Maps</div></div>
+    </div>
+</div>
+
+<style>
+/* ── Wizard Steps ──────────────────────────────────── */
+.wizard-steps {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 0 0 1.8rem 0;
+    padding: 1.2rem 1.6rem;
+    background: var(--card-bg, rgba(255,255,255,0.04));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+}
+.wizard-step {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    opacity: 0.38;
+    transition: opacity .25s;
+}
+.wizard-step.active  { opacity: 1; }
+.wizard-step.done    { opacity: 0.75; }
+.ws-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.10);
+    border: 2px solid rgba(255,255,255,0.18);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.8rem;
+    transition: background .25s, border-color .25s;
+}
+.wizard-step.active  .ws-num { background: var(--accent, #6366f1); border-color: var(--accent, #6366f1); color: #fff; }
+.wizard-step.done    .ws-num { background: #22c55e; border-color: #22c55e; color: #fff; }
+.ws-label { font-size: 0.88rem; font-weight: 600; }
+.wizard-connector {
+    flex: 1;
+    height: 2px;
+    background: rgba(255,255,255,0.10);
+    margin: 0 0.9rem;
+    border-radius: 2px;
+    transition: background .35s;
+}
+.wizard-connector.done { background: #22c55e; }
+
+/* ── Shop Grid ─────────────────────────────────────── */
+.shop-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 0.9rem;
+    margin-top: 1.2rem;
+}
+.shop-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1.1rem 0.6rem;
+    border-radius: 12px;
+    border: 2px solid rgba(255,255,255,0.10);
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-muted, #a1a1aa);
+    transition: border-color .18s, background .18s, color .18s, transform .15s;
+    line-height: 1.3;
+    text-align: center;
+}
+.shop-tile:hover {
+    border-color: var(--accent, #6366f1);
+    background: rgba(99,102,241,0.12);
+    color: #fff;
+    transform: translateY(-2px);
+}
+.shop-tile.selected {
+    border-color: var(--accent, #6366f1);
+    background: rgba(99,102,241,0.22);
+    color: #fff;
+    box-shadow: 0 0 14px rgba(99,102,241,0.35);
+}
+.shop-tile-syllabus.selected {
+    border-color: #f59e0b;
+    background: rgba(245,158,11,0.18);
+    box-shadow: 0 0 14px rgba(245,158,11,0.30);
+}
+.shop-tile > span:first-child { font-size: 1.6rem; line-height: 1; }
+
+/* ── Step 2 Header ────────────────────────────────── */
+.step2-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.2rem;
+}
+.step2-header h2 { margin: 0 0 0.25rem 0; }
+
+/* ── Audit Log ────────────────────────────────────── */
+.audit-section h2 { font-size: 1rem; font-weight: 700; margin: 0 0 0.9rem 0; opacity: 0.85; }
+.uploader-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    background: rgba(99,102,241,0.12);
+    border: 1px solid rgba(99,102,241,0.25);
+    color: var(--accent, #6366f1);
+}
+
+/* ── Upload Mode Selector ────────────────────────── */
+.upload-mode-group { margin-bottom: 1.2rem; }
+.upload-mode-label { display: block; font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+                     letter-spacing: 0.06em; opacity: 0.6; margin-bottom: 0.6rem; }
+.mode-radio-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+.mode-option {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 0.25rem; padding: 0.9rem 0.5rem 0.75rem;
+    border: 1.5px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    background: rgba(255,255,255,0.03);
+    cursor: pointer; text-align: center;
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.mode-option input[type="radio"] { position: absolute; opacity: 0; width: 0; height: 0; }
+.mode-option:has(input:checked) {
+    border-color: var(--accent, #6366f1);
+    background: rgba(99,102,241,0.1);
+    box-shadow: 0 0 12px rgba(99,102,241,0.2);
+}
+.mode-option-recommended { border-color: rgba(99,102,241,0.3); }
+.mode-badge {
+    position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 0.15rem 0.5rem; border-radius: 20px;
+    background: var(--accent, #6366f1); color: #fff;
+}
+.mode-icon { font-size: 1.3rem; }
+.mode-title { font-size: 0.82rem; font-weight: 700; }
+.mode-desc  { font-size: 0.72rem; opacity: 0.55; line-height: 1.3; }
+
+/* ── Duplicate Banner ───────────────────────────── */
+.dup-banner {
+    display: flex; align-items: flex-start; gap: 1rem;
+    padding: 1.1rem 1.4rem;
+    margin: 0.75rem 0 1rem 0;
+    border-radius: 12px;
+    background: rgba(245,158,11,0.1);
+    border: 1.5px solid rgba(245,158,11,0.35);
+    position: relative;
+    animation: fadeIn 0.25s ease;
+}
+.dup-banner-icon { font-size: 1.6rem; flex-shrink: 0; padding-top: 0.1rem; }
+.dup-banner-body { flex: 1; }
+.dup-banner-title { font-weight: 700; font-size: 0.95rem; margin: 0 0 0.25rem 0;
+                    color: rgb(245,158,11); }
+.dup-banner-sub   { font-size: 0.82rem; opacity: 0.8; margin: 0 0 0.8rem 0; }
+.dup-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.dup-dismiss {
+    position: absolute; top: 0.7rem; right: 0.8rem;
+    background: none; border: none; cursor: pointer;
+    font-size: 0.85rem; opacity: 0.45; color: inherit;
+    padding: 0.2rem 0.4rem; border-radius: 4px;
+}
+.dup-dismiss:hover { opacity: 0.9; }
+</style>
+
+<script>
+/* ── Tab nav ─────────────────────────────────────── */
+/* ── Duplicate Banner ─────────────────────────── */
+function showDupBanner() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('dup') === '1') {
+        var banner = document.getElementById('dup-banner');
+        if (banner) { banner.style.display = 'flex'; }
+        // Remove ?dup=1 from the URL bar without reloading
+        history.replaceState(null, '', window.location.pathname);
+    }
+}
+function dismissDup() {
+    var banner = document.getElementById('dup-banner');
+    if (banner) { banner.style.display = 'none'; }
+}
+document.addEventListener('DOMContentLoaded', showDupBanner);
+
+/* ── Tab nav ─────────────────────────────────────── */
+function showTab(name) {
+    document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('pane-' + name).style.display = 'block';
+    document.getElementById('tab-' + name).classList.add('active');
+}
+
+/* ── Wizard logic ────────────────────────────────── */
+const SHOP_LABELS = {
+    TCF_1:          'TCF 1',
+    TCF_2:          'TCF 2',
+    PAINT_SHOP:     'Paint Shop',
+    ENGINE_SHOP:    'Engine Shop',
+    TRANSAXLE_SHOP: 'Transaxle Shop',
+    EV_SHOP:        'EV Shop',
+    JLR_SHOP:       'JLR Shop',
+    WELD_SHOP:      'Weld Shop',
+    '':             'TCF Syllabus',
+};
+
+function selectShop(tile) {
+    // Highlight selected tile
+    document.querySelectorAll('.shop-tile').forEach(t => t.classList.remove('selected'));
+    tile.classList.add('selected');
+
+    const shopCode   = tile.dataset.shop;
+    const sourceType = tile.dataset.type || (shopCode ? 'station_data' : 'tcf_data');
+    const label      = SHOP_LABELS[shopCode] || shopCode;
+
+    // Populate hidden fields
+    document.getElementById('hidden-shop').value        = shopCode;
+    document.getElementById('hidden-source-type').value = sourceType;
+    document.getElementById('selected-shop-label').textContent = label;
+
+    // Advance wizard after brief highlight
+    setTimeout(() => {
+        document.getElementById('wizard-step1').style.display = 'none';
+        document.getElementById('wizard-step2').style.display = 'block';
+        // Update step indicators
+        document.getElementById('ws-1').classList.remove('active');
+        document.getElementById('ws-1').classList.add('done');
+        document.getElementById('wc-1').classList.add('done');
+        document.getElementById('ws-2').classList.add('active');
+    }, 200);
+}
+
+function goBackToStep1() {
+    document.getElementById('wizard-step2').style.display = 'none';
+    document.getElementById('wizard-step1').style.display = 'block';
+    // Reset step indicators
+    document.getElementById('ws-1').classList.add('active');
+    document.getElementById('ws-1').classList.remove('done');
+    document.getElementById('wc-1').classList.remove('done');
+    document.getElementById('ws-2').classList.remove('active');
+    // Clear file input label
+    document.getElementById('file-name-display').textContent = 'Drag & drop or click to select .xlsx / .xls';
+    document.getElementById('file-drop-zone').classList.remove('file-selected');
+}
+
+/* ── File label ──────────────────────────────────── */
+function updateFileLabel(input) {
+    const label = document.getElementById('file-name-display');
+    if (input.files && input.files[0]) {
+        label.textContent = '📄 ' + input.files[0].name;
+        document.getElementById('file-drop-zone').classList.add('file-selected');
+    }
+}
+
+/* ── Drag and drop ───────────────────────────────── */
+const dropZone = document.getElementById('file-drop-zone');
+if (dropZone) {
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        if (files.length) {
+            document.getElementById('file').files = files;
+            updateFileLabel(document.getElementById('file'));
+        }
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<section class="hero-section">
+    <div class="hero-text">
+        <h1>Industrial Talent &amp; Competency Engine</h1>
+        <p>Intelligent talent mapping across your manufacturing workforce. Discover skills, identify gaps, build tomorrow's teams.</p>
+    </div>
+    <div class="hero-badge-row">
+        <span class="hero-badge">Skill Mapping</span>
+        <span class="hero-badge">Talent Analytics</span>
+        <span class="hero-badge">Competency Tracking</span>
+        <span class="hero-badge">Workforce Planning</span>
+    </div>
+</section>
+
+<!-- Shop Cards -->
+<section class="shop-cards-section fade-in">
+    <div class="section-header">
+        <h2>Manufacturing Shops</h2>
+        <span class="results-count">{{ stats.shops }} Shops Active</span>
+    </div>
+    <div class="shop-cards-grid">
+        <a href="{{ url_for('shop_detail', shop_code='TCF_1') }}" class="shop-card" id="shop-tcf1">
+            <div class="shop-card-icon">🏗️</div>
+            <div class="shop-card-name">TCF 1</div>
+            <div class="shop-card-desc">TCF Shop — Line 1</div>
+        </a>
+        <a href="{{ url_for('shop_detail', shop_code='TCF_2') }}" class="shop-card" id="shop-tcf2">
+            <div class="shop-card-icon">🏗️</div>
+            <div class="shop-card-name">TCF 2</div>
+            <div class="shop-card-desc">TCF Shop — Line 2</div>
+        </a>
+        <a href="{{ url_for('shop_detail', shop_code='PAINT_SHOP') }}" class="shop-card" id="shop-paint">
+            <div class="shop-card-icon">🎨</div>
+            <div class="shop-card-name">Paint Shop</div>
+            <div class="shop-card-desc">Surface Coating &amp; Finishing</div>
+        </a>
+        <a href="{{ url_for('shop_detail', shop_code='ENGINE_SHOP') }}" class="shop-card" id="shop-engine">
+            <div class="shop-card-icon">⚙️</div>
+            <div class="shop-card-name">Engine Shop</div>
+            <div class="shop-card-desc">Powertrain Assembly &amp; Testing</div>
+        </a>
+        <a href="{{ url_for('shop_detail', shop_code='TRANSAXLE_SHOP') }}" class="shop-card" id="shop-transaxle">
+            <div class="shop-card-icon">🔩</div>
+            <div class="shop-card-name">Transaxle Shop</div>
+            <div class="shop-card-desc">Gearbox &amp; Drive Unit Assembly</div>
+        </a>
+        <a href="{{ url_for('shop_detail', shop_code='EV_SHOP') }}" class="shop-card" id="shop-ev">
+            <div class="shop-card-icon">⚡</div>
+            <div class="shop-card-name">EV Shop</div>
+            <div class="shop-card-desc">Electric Vehicle Systems</div>
+        </a>
+        <a href="{{ url_for('shop_detail', shop_code='JLR_SHOP') }}" class="shop-card" id="shop-jlr">
+            <div class="shop-card-icon">🚗</div>
+            <div class="shop-card-name">JLR Shop</div>
+            <div class="shop-card-desc">Jaguar Land Rover Production</div>
+        </a>
+        <a href="{{ url_for('shop_detail', shop_code='WELD_SHOP') }}" class="shop-card" id="shop-weld">
+            <div class="shop-card-icon">🔥</div>
+            <div class="shop-card-name">Weld Shop</div>
+            <div class="shop-card-desc">Body Structure Welding</div>
+        </a>
+    </div>
+</section>
+
+<!-- Quick Search -->
+<section class="quick-search-section fade-in">
+    <form action="{{ url_for('search') }}" method="GET" class="search-form" id="main-search-form">
+        <input type="text" name="q" id="search-input" placeholder="Search stations, skills, roles, topics..." class="search-input" autocomplete="off">
+        <button type="submit" class="primary-btn" id="search-btn">Search</button>
+    </form>
+</section>
+
+<!-- Competency Dashboard -->
+<section class="dashboard-section fade-in">
+    <div class="section-header">
+        <h2>Workstation Competency Readiness</h2>
+        <a href="{{ url_for('graph') }}" class="secondary-btn">View Knowledge Graph →</a>
+    </div>
+
+    {% if competency_summary %}
+    <div class="competency-grid">
+        {% for stn in competency_summary %}
+        <a href="{{ url_for('station_detail', station_id=stn.station_id) }}" class="competency-card" id="stn-card-{{ stn.station_id }}">
+            <div class="comp-card-header">
+                <span class="entity-badge badge-station">STATION</span>
+                <span class="comp-shop">{{ stn.shop }}</span>
+            </div>
+            <div class="comp-card-code">{{ stn.station_code }}</div>
+            <div class="comp-card-name">{{ stn.station_name }}</div>
+            <div class="readiness-bar-wrap">
+                <div class="readiness-bar-bg">
+                    <div class="readiness-bar-fill
+                        {% if stn.readiness_pct >= 75 %}bar-good
+                        {% elif stn.readiness_pct >= 40 %}bar-mid
+                        {% else %}bar-low{% endif %}"
+                        style="width: {{ stn.readiness_pct }}%">
+                    </div>
+                </div>
+                <span class="readiness-pct">{{ stn.readiness_pct }}%</span>
+            </div>
+            <div class="comp-card-meta">{{ stn.covered }}/{{ stn.total_skills }} skills covered</div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No competency data loaded yet.</p>
+        <p>Upload Shop Data and TCF Syllabus files via the <a href="{{ url_for('admin') }}">Admin Panel</a> to get started.</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}
