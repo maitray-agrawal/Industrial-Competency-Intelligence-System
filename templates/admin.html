@@ -68,7 +68,7 @@
                 <button type="button" class="shop-tile" data-shop="EV_SHOP"   onclick="selectShop(this)">⚡<span>EV Shop</span></button>
                 <button type="button" class="shop-tile" data-shop="JLR_SHOP"  onclick="selectShop(this)">🚘<span>JLR Shop</span></button>
                 <button type="button" class="shop-tile" data-shop="WELD_SHOP" onclick="selectShop(this)">🔥<span>Weld Shop</span></button>
-                <button type="button" class="shop-tile shop-tile-syllabus" data-shop="" onclick="selectShop(this)" data-type="tcf_data">📖<span>TCF Syllabus</span></button>
+                <button type="button" class="shop-tile shop-tile-syllabus" data-shop="" onclick="selectShop(this)" data-type="tcf_data">📖<span>Syllabus</span></button>
             </div>
         </div>
     </div>
@@ -156,7 +156,7 @@
             </table>
         </div>
         <div class="schema-card">
-            <h3>TCF Syllabus Schema</h3>
+            <h3>Syllabus Schema</h3>
             <table class="schema-table">
                 <tr><th>Column</th><th>Required</th></tr>
                 <tr><td>topic</td><td><span class="badge-req">Required</span></td></tr>
@@ -224,7 +224,7 @@
                         {% if uf.shop_code %}
                             <span class="entity-badge badge-station">{{ uf.shop_code.replace('_', ' ') }}</span>
                         {% else %}
-                            <span class="entity-badge badge-topic">TCF Syllabus</span>
+                            <span class="entity-badge badge-topic"> Syllabus</span>
                         {% endif %}
                     </td>
                     <td class="mono">{{ uf.filename }}</td>
@@ -493,7 +493,7 @@ const SHOP_LABELS = {
     EV_SHOP:        'EV Shop',
     JLR_SHOP:       'JLR Shop',
     WELD_SHOP:      'Weld Shop',
-    '':             'TCF Syllabus',
+    '':             'Syllabus',
 };
 
 function selectShop(tile) {

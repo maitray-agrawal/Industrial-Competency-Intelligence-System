@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block title %}WIS Document — {{ file_name }}{% endblock %}
+
+{% block content %}
+
+<!-- Breadcrumb -->
+<nav class="breadcrumb-bar" aria-label="Breadcrumb">
+    <a href="{{ url_for('index') }}" class="breadcrumb-link">Dashboard</a>
+    <span class="breadcrumb-sep">›</span>
+    {% if entity_type == 'shop' %}
+        <a href="{{ url_for('shop_detail', shop_code=entity_code) }}" class="breadcrumb-link">{{ entity_name }}</a>
+    {% else %}
+        <a href="{{ url_for('shop_detail', shop_code=shop_code) }}" class="breadcrumb-link">{{ shop_name }}</a>
+        <span class="breadcrumb-sep">›</span>
+        <a href="{{ url_for('station_detail', station_id=station_id) }}" class="breadcrumb-link">{{ entity_name }}</a>
+    {% endif %}
+    <span class="breadcrumb-sep">›</span>
+    <span class="breadcrumb-current">📄 WIS Document</span>
+</nav>
+
+<!-- WIS Viewer Header -->
+<div class="wis-viewer-header fade-in">
+    <div class="wis-viewer-meta">
+        <span class="entity-badge {% if entity_type == 'shop' %}badge-shop{% else %}badge-station{% endif %}">
+            {% if entity_type == 'shop' %}SHOP{% else %}STATION{% endif %}
+        </span>
+        <code class="wis-viewer-code">{{ entity_code }}</code>
+    </div>
+    <h1>📄 {{ file_name }}</h1>
+</div>
+
+<!-- Document Info Card -->
+<div class="wis-viewer-card fade-in">
+    <div class="wis-info-section">
+        <h3 style="margin-bottom:1.5rem">Document Information</h3>
+        
+        <div class="wis-info-grid">
+            <div class="wis-info-row">
+                <span class="wis-info-label">File Name:</span>
+                <span class="wis-info-value">{{ file_name }}</span>
+            </div>
+            
+            <div class="wis-info-row">
+                <span class="wis-info-label">Uploaded At:</span>
+                <span class="wis-info-value">{{ uploaded_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+            </div>
+            
+            <div class="wis-info-row">
+                <span class="wis-info-label">Uploaded By:</span>
+                <span class="wis-info-value">{{ uploaded_by or 'System' }}</span>
+            </div>
+            
+            <div class="wis-info-row">
+                <span class="wis-info-label">Associated {% if entity_type == 'shop' %}Shop{% else %}Station{% endif %}:</span>
+                <span class="wis-info-value">{{ entity_name }}</span>
+            </div>
+            
+            {% if entity_type == 'station' %}
+            <div class="wis-info-row">
+                <span class="wis-info-label">Shop:</span>
+                <span class="wis-info-value">{{ shop_name }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Action Buttons -->
+    <div class="wis-viewer-actions">
+        <a href="{{ view_url }}" target="_blank" class="primary-btn">👁️ Open Document</a>
+        <a href="{{ download_url }}" class="secondary-btn">⬇️ Download</a>
+        <a href="javascript:history.back()" class="secondary-btn">← Back</a>
+    </div>
+</div>
+
+<!-- Document Notes -->
+<div class="wis-viewer-notes fade-in">
+    <p style="font-size:0.875rem;color:var(--text-dim);text-align:center">
+        📋 This WIS (Work Instruction Set) document provides operational guidance.<br>
+        Open the document to view its contents. Document access is for viewing and download only.
+    </p>
+</div>
+
+<style>
+.wis-viewer-header {
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.wis-viewer-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.875rem;
+}
+
+.wis-viewer-code {
+    font-family: 'Monaco', 'Menlo', monospace;
+    background: var(--bg-hover);
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.85rem;
+}
+
+.wis-viewer-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.wis-info-section h3 {
+    font-size: 1.25rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.wis-info-grid {
+    display: grid;
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+}
+
+.wis-info-row {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.wis-info-row:last-child {
+    border-bottom: none;
+}
+
+.wis-info-label {
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.wis-info-value {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    word-break: break-word;
+}
+
+.wis-viewer-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.wis-viewer-actions .primary-btn,
+.wis-viewer-actions .secondary-btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    min-width: 150px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    cursor: pointer;
+    border: none;
+    border-radius: 0.375rem;
+    transition: all 0.2s ease;
+}
+
+.wis-viewer-actions .primary-btn {
+    background: var(--primary-color);
+    color: white;
+}
+
+.wis-viewer-actions .primary-btn:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.wis-viewer-actions .secondary-btn {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.wis-viewer-actions .secondary-btn:hover {
+    background: var(--border-color);
+    transform: translateY(-2px);
+}
+
+.wis-viewer-notes {
+    text-align: center;
+    padding: 1.5rem;
+    background: var(--bg-hover);
+    border-radius: 0.375rem;
+    border-left: 4px solid var(--primary-color);
+}
+
+@media (max-width: 768px) {
+    .wis-info-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .wis-info-label {
+        font-weight: 700;
+    }
+    
+    .wis-viewer-actions {
+        flex-direction: column;
+    }
+    
+    .wis-viewer-actions button,
+    .wis-viewer-actions a {
+        width: 100%;
+    }
+    
+    .wis-viewer-card {
+        padding: 1.5rem;
+    }
+}
+</style>
+
+{% endblock %}

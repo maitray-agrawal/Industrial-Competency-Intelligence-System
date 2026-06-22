@@ -50,6 +50,14 @@
     </p>
 </div>
 
+<!-- Tab Navigation -->
+<nav class="tab-nav" id="shop-tab-nav" role="tablist" aria-label="Shop sections">
+    <button class="tab-btn active" onclick="switchTab('overview',this)" id="tab-overview" role="tab">🏭 Stations</button>
+    <button class="tab-btn" onclick="switchTab('wis',this)" id="tab-wis" role="tab">📄 WIS Documents{% if wis_docs %} ({{ wis_docs | length }}){% endif %}</button>
+</nav>
+
+<!-- ══════════════════════ TAB 1: STATIONS/OVERVIEW ══════════════════════ -->
+<div class="shop-tab-panel fade-in" id="panel-overview" role="tabpanel">
 {% if subgroups %}
 <!-- BIW Group Selector Cards -->
 <div class="shop-cards-grid fade-in">
@@ -140,12 +148,149 @@
     {% endif %}
 </div>
 {% endif %}
+</div>
+
+<!-- ══════════════════════ TAB 2: WIS DOCUMENTS ══════════════════════ -->
+<div class="shop-tab-panel" id="panel-wis" role="tabpanel" hidden>
+
+{% if is_admin %}
+<!-- Upload Section for Admin -->
+<div class="wis-upload-card card fade-in" style="margin-bottom: 2rem;">
+    <div class="upload-header">
+        <h3>Upload Shop WIS Document</h3>
+        <p class="upload-hint">Add PowerPoint presentations (.ppt, .pptx)</p>
+    </div>
+    <form action="{{ url_for('upload_shop_wis') }}" method="POST" enctype="multipart/form-data" class="wis-upload-form">
+        <input type="hidden" name="shop_code" value="{{ shop.shop_code }}">
+        
+        <div class="form-group">
+            <label for="wis-file-input" class="file-input-label">
+                <div class="file-drop-area">
+                    <span class="drop-icon">📤</span>
+                    <span class="drop-text">Drag & drop or click to select file</span>
+                    <span class="drop-hint">.ppt or .pptx only</span>
+                </div>
+            </label>
+            <input type="file" id="wis-file-input" name="file" accept=".ppt,.pptx" required style="display:none;">
+        </div>
+
+        <div id="file-preview" class="file-preview" style="display:none; margin: 1rem 0;">
+            <span id="file-preview-name"></span>
+            <button type="button" class="file-preview-remove" onclick="clearFileInput()">✕</button>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="primary-btn">🚀 Upload Document</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+<!-- Documents List -->
+<div class="wis-documents-section">
+    {% if wis_docs %}
+    <h3>Uploaded Documents ({{ wis_docs | length }})</h3>
+    <div class="wis-documents-list">
+        {% for doc in wis_docs %}
+        <div class="wis-doc-card card">
+            <div class="doc-header">
+                <div class="doc-icon">📊</div>
+                <div class="doc-info">
+                    <div class="doc-name">{{ doc.file_name }}</div>
+                    <div class="doc-meta">
+                        <span class="doc-date">Uploaded: {{ doc.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        {% if doc.uploaded_by %}
+                        <span class="doc-by"> by {{ doc.uploaded_by }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="doc-actions">
+                <a href="{{ url_for('shop_wis_viewer', doc_id=doc.id) }}" class="icon-btn doc-view-btn" title="View" target="_blank">👁️</a>
+                {% if is_admin %}
+                <a href="{{ url_for('download_shop_wis', doc_id=doc.id) }}" class="icon-btn doc-download-btn" title="Download">⬇️</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No WIS documents uploaded for this shop yet.</p>
+        {% if is_admin %}
+        <p>Use the upload section above to add PowerPoint presentations.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+</div>
 
 <div style="margin-top: 2.5rem;">
     <a href="{{ url_for('index') }}" class="secondary-btn">← Back to Dashboard</a>
 </div>
 
 <script>
+    // Tab switching
+    function switchTab(tabName, btnEl) {
+        // Hide all panels
+        document.querySelectorAll('.shop-tab-panel').forEach(panel => panel.hidden = true);
+        // Remove active from all buttons
+        document.querySelectorAll('.tab-nav .tab-btn').forEach(btn => btn.classList.remove('active'));
+        
+        // Show selected panel
+        const panelId = 'panel-' + tabName;
+        const panel = document.getElementById(panelId);
+        if (panel) {
+            panel.hidden = false;
+            panel.classList.add('fade-in');
+        }
+        
+        // Mark button as active
+        if (btnEl) btnEl.classList.add('active');
+    }
+
+    // File input handling
+    document.getElementById('wis-file-input')?.addEventListener('change', function() {
+        const preview = document.getElementById('file-preview');
+        const previewName = document.getElementById('file-preview-name');
+        if (this.files.length > 0) {
+            previewName.textContent = this.files[0].name;
+            preview.style.display = 'flex';
+        } else {
+            preview.style.display = 'none';
+        }
+    });
+
+    function clearFileInput() {
+        document.getElementById('wis-file-input').value = '';
+        document.getElementById('file-preview').style.display = 'none';
+    }
+
+    // Drag and drop
+    const fileInput = document.getElementById('wis-file-input');
+    const fileLabel = document.querySelector('.file-input-label');
+    
+    if (fileLabel) {
+        fileLabel.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileLabel.classList.add('drag-over');
+        });
+        
+        fileLabel.addEventListener('dragleave', () => {
+            fileLabel.classList.remove('drag-over');
+        });
+        
+        fileLabel.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileLabel.classList.remove('drag-over');
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                fileInput.dispatchEvent(new Event('change'));
+            }
+        });
+    }
+
     // Expand/collapse animation enhancement
     document.querySelectorAll('details').forEach(el => {
         el.addEventListener('toggle', function () {

@@ -14,6 +14,7 @@ This repository implements a secure, local application designed to run in air-ga
 * Competency readiness dashboard
 * Interactive knowledge graph visualization using locally hosted `vis.js`
 * Unified entity API contract for theory-topic reverse mapping to shop stations and tooling
+* **WIS (Work Instruction Set) document storage** — Upload, organize, and access PowerPoint presentations at shop and station levels
 
 ## Repository Structure
 ```
@@ -106,6 +107,8 @@ Then open a browser and visit:
 * `http://127.0.0.1:5000` — Dashboard
 * `http://127.0.0.1:5000/search` — Search and graph explorer
 * `http://127.0.0.1:5000/admin` — Admin ingest panel
+* `http://127.0.0.1:5000/shop/<shop_code>` — Shop detail with WIS documents tab
+* `http://127.0.0.1:5000/station/<station_id>` — Station detail with WIS documents tab
 
 ## Admin login
 Use the default credentials or configure environment variables if needed:
@@ -115,9 +118,34 @@ Use the default credentials or configure environment variables if needed:
 ## Data ingestion
 Use the Admin page to upload supported Excel files, including:
 * Shop Data `.xlsx` files (station, process, skill, tool layouts per shop)
-* `TCF_1.xlsx` (TCF Syllabus / theory data)
+* `TCF_1.xlsx` (Syllabus / theory data)
 
 The system auto-detects the dataset type and builds the local index.
+
+## WIS Document Management
+The system supports Work Instruction Set (WIS) document storage and retrieval at both shop and station levels:
+
+### Uploading WIS Documents
+1. Navigate to a **Shop** or **Station** detail page
+2. Click the **"📄 WIS Documents"** tab
+3. For **admin users only**, use the upload form to add PowerPoint files (`.ppt`, `.pptx`)
+4. Drag & drop or click to select files; documents are stored with unique names to prevent collisions
+
+### Accessing WIS Documents
+* **View:** Click the **👁️** button to open documents in the browser (read-only)
+* **Download:** Click the **⬇️** button (admin users only) to download the original file
+* **Metadata:** Each document displays upload date, filename, and uploader information
+
+### Document Storage
+* Shop-level documents: `uploads/wis/shops/<shop_name>/`
+* Station-level documents: `uploads/wis/stations/<station_code>/`
+* All files stored with UUID suffixes to prevent overwrite conflicts
+
+### Security
+* Upload restricted to authenticated admin users
+* View access is public (no authentication required)
+* Download access restricted to authenticated admin users
+* Files are served as-is (no parsing, extraction, or summarization)
 
 ## Notes
 * All UI assets are served locally from `static/`.

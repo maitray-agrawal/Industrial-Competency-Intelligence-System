@@ -23,7 +23,7 @@ from graph_engine import rebuild_knowledge_graph
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 
-# Dynamically discover shop data files — any .xlsx/.xls in uploads that are not TCF syllabus files
+# Dynamically discover shop data files — any .xlsx/.xls in uploads that are not syllabus files
 shop_data_files = [
     f for f in os.listdir(UPLOAD_DIR)
     if f.lower().endswith((".xlsx", ".xls"))
@@ -47,7 +47,7 @@ for fname in shop_data_files:
 for fname in tcf_files:
     fpath = os.path.join(UPLOAD_DIR, fname)
     if os.path.exists(fpath):
-        print(f"\n[INGEST] TCF Syllabus: {fname}")
+        print(f"\n[INGEST] Syllabus: {fname}")
         stats = IngestionPipeline.ingest_excel(fpath, source_type="tcf_data")
         print(f"   ETL Stats: {stats}")
     else:

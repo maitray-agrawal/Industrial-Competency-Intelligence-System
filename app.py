@@ -3,7 +3,7 @@ import re
 import atexit
 import hashlib
 import uuid as _uuid
-from flask import Flask, render_template, request, Response, redirect, url_for, flash, jsonify, session as flask_session
+from flask import Flask, render_template, request, Response, redirect, url_for, flash, jsonify, session as flask_session, send_file
 from werkzeug.utils import secure_filename
 
 from database import SessionLocal, engine, init_db
@@ -12,7 +12,8 @@ from models import (
     Topic, Subtopic, StagingData, CompetencyMap,
     SkillOperationMap, TopicSkillMap, ToolStationMap, UploadedFile,
     SkillStationMap, StationOperationMap,
-    GraphEntity, GraphRelationship
+    GraphEntity, GraphRelationship,
+    ShopWISDocument, StationWISDocument
 )
 from sqlalchemy import Integer as _SAInteger
 from search_engine import SearchAPI, SearchIndexer
@@ -35,6 +36,7 @@ app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB upload limit
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
+ALLOWED_WIS_EXTENSIONS = {".ppt", ".pptx"}
 
 DEBUG_MODE = os.environ.get("FLASK_ENV", "production").lower() == "development"
 
@@ -42,6 +44,12 @@ def allowed_file(filename: str) -> bool:
     """Return True only if the file has an allowed Excel extension."""
     ext = os.path.splitext(filename.lower())[1]
     return ext in ALLOWED_EXTENSIONS
+
+
+def allowed_wis_file(filename: str) -> bool:
+    """Return True only if the file has an allowed PowerPoint extension."""
+    ext = os.path.splitext(filename.lower())[1]
+    return ext in ALLOWED_WIS_EXTENSIONS
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +195,13 @@ def station_detail(station_id):
         graph_nodes.append({"id": tid, "label": label, "group": "topic"})
         graph_edges.append({"from": tid, "to": stn_nid})
 
+    # --- WIS documents for this station ---
+    wis_docs = None
+    is_admin = False
+    with SessionLocal() as _s:
+        wis_docs = _s.query(StationWISDocument).filter_by(station_id=station_id).order_by(StationWISDocument.uploaded_at.desc()).all()
+        is_admin = request.authorization and check_auth(request.authorization.username, request.authorization.password)
+
     return render_template(
         "station.html",
         profile        = profile,
@@ -194,6 +209,8 @@ def station_detail(station_id):
         skills_summary = skills_summary,
         graph_nodes    = graph_nodes,
         graph_edges    = graph_edges,
+        wis_docs       = wis_docs,
+        is_admin       = is_admin,
     )
 
 
@@ -343,6 +360,8 @@ def shop_detail(shop_code):
             flash(f"Shop '{shop_code}' not found.", "danger")
             return redirect(url_for("index"))
         stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order.nulls_last(), Station.id).all()
+        wis_docs = db.query(ShopWISDocument).filter_by(shop_id=shop.id).order_by(ShopWISDocument.uploaded_at.desc()).all()
+        is_admin = request.authorization and check_auth(request.authorization.username, request.authorization.password)
 
         # Weld Shop: show BIW group selector cards first
         if shop_code == "WELD_SHOP":
@@ -351,12 +370,14 @@ def shop_detail(shop_code):
                 return render_template(
                     "shop.html", shop=shop,
                     subgroups=subgroups, hierarchy=None, subgroup=None,
+                    wis_docs=wis_docs, is_admin=is_admin,
                 )
 
         hierarchy = _parse_station_hierarchy(stations)
         return render_template(
             "shop.html", shop=shop,
             hierarchy=hierarchy, subgroups=None, subgroup=None,
+            wis_docs=wis_docs, is_admin=is_admin,
         )
 
 
@@ -369,6 +390,8 @@ def shop_subgroup(shop_code, subgroup):
             flash(f"Shop '{shop_code}' not found.", "danger")
             return redirect(url_for("index"))
         stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order.nulls_last(), Station.id).all()
+        wis_docs = db.query(ShopWISDocument).filter_by(shop_id=shop.id).order_by(ShopWISDocument.uploaded_at.desc()).all()
+        is_admin = request.authorization and check_auth(request.authorization.username, request.authorization.password)
 
         if shop_code == "WELD_SHOP":
             hierarchy = _parse_weld_biw_subhierarchy(stations, subgroup)
@@ -381,6 +404,7 @@ def shop_subgroup(shop_code, subgroup):
         return render_template(
             "shop.html", shop=shop,
             hierarchy=hierarchy, subgroups=None, subgroup=subgroup_label,
+            wis_docs=wis_docs, is_admin=is_admin,
         )
 
 
@@ -791,8 +815,329 @@ def reset_db():
 
 
 # ===========================================================================
-# WAL CHECKPOINT ON CLEAN SHUTDOWN
+# ROUTES — WIS Document Upload (PowerPoint presentations)
 # ===========================================================================
+
+@app.route("/admin/upload-shop-wis", methods=["POST"])
+@requires_auth
+def upload_shop_wis():
+    """Upload WIS (Work Instruction Set) PowerPoint document for a shop."""
+    if "file" not in request.files:
+        flash("No file part in request.", "danger")
+        return redirect(url_for("admin"))
+
+    file = request.files["file"]
+    shop_code = request.form.get("shop_code", "").strip()
+
+    if not file or not file.filename:
+        flash("No file selected.", "danger")
+        return redirect(url_for("admin"))
+
+    if not allowed_wis_file(file.filename):
+        flash(
+            f"❌ Rejected '{file.filename}': only .ppt and .pptx files are accepted.",
+            "danger",
+        )
+        logger.warning(f"WIS upload rejected — invalid extension: {file.filename}")
+        return redirect(url_for("admin"))
+
+    if not shop_code:
+        flash("No shop selected.", "danger")
+        return redirect(url_for("admin"))
+
+    with SessionLocal() as db:
+        shop = db.query(Shop).filter_by(shop_code=shop_code).first()
+        if not shop:
+            flash(f"Shop '{shop_code}' not found.", "danger")
+            return redirect(url_for("admin"))
+
+    # Create shop-specific directory
+    wis_shop_dir = os.path.join(UPLOAD_FOLDER, "wis", "shops", shop.name)
+    os.makedirs(wis_shop_dir, exist_ok=True)
+
+    # Save file with UUID suffix
+    original_name = secure_filename(file.filename)
+    stem, ext = os.path.splitext(original_name)
+    unique_name = f"{stem}_{_uuid.uuid4().hex[:8]}{ext}"
+    filepath = os.path.join(wis_shop_dir, unique_name)
+
+    try:
+        file.save(filepath)
+    except Exception as save_err:
+        flash(f"❌ Could not save file: {save_err}", "danger")
+        logger.error(f"File save error: {save_err}")
+        return redirect(url_for("admin"))
+
+    # Create database record
+    try:
+        with SessionLocal() as db:
+            db_doc = ShopWISDocument(
+                shop_id=shop.id,
+                file_name=original_name,
+                file_path=filepath,
+                uploaded_by=request.authorization.username if request.authorization else None,
+            )
+            db.add(db_doc)
+            db.commit()
+            logger.info(f"Shop WIS document uploaded: shop_id={shop.id}, file='{original_name}'")
+            flash(f"✅ WIS document '{original_name}' uploaded for shop '{shop.name}'.", "success")
+    except Exception as db_err:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        flash(f"❌ Could not save document record: {db_err}", "danger")
+        logger.error(f"Database save error for shop WIS: {db_err}")
+
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/upload-station-wis", methods=["POST"])
+@requires_auth
+def upload_station_wis():
+    """Upload WIS (Work Instruction Set) PowerPoint document for a station."""
+    if "file" not in request.files:
+        flash("No file part in request.", "danger")
+        return redirect(url_for("admin"))
+
+    file = request.files["file"]
+    station_id_str = request.form.get("station_id", "").strip()
+
+    if not file or not file.filename:
+        flash("No file selected.", "danger")
+        return redirect(url_for("admin"))
+
+    if not allowed_wis_file(file.filename):
+        flash(
+            f"❌ Rejected '{file.filename}': only .ppt and .pptx files are accepted.",
+            "danger",
+        )
+        logger.warning(f"WIS upload rejected — invalid extension: {file.filename}")
+        return redirect(url_for("admin"))
+
+    if not station_id_str:
+        flash("No station selected.", "danger")
+        return redirect(url_for("admin"))
+
+    try:
+        station_id = int(station_id_str)
+    except (ValueError, TypeError):
+        flash("Invalid station ID.", "danger")
+        return redirect(url_for("admin"))
+
+    with SessionLocal() as db:
+        station = db.query(Station).filter_by(id=station_id).first()
+        if not station:
+            flash(f"Station ID {station_id} not found.", "danger")
+            return redirect(url_for("admin"))
+
+    # Create station-specific directory
+    wis_station_dir = os.path.join(UPLOAD_FOLDER, "wis", "stations", station.station_code)
+    os.makedirs(wis_station_dir, exist_ok=True)
+
+    # Save file with UUID suffix
+    original_name = secure_filename(file.filename)
+    stem, ext = os.path.splitext(original_name)
+    unique_name = f"{stem}_{_uuid.uuid4().hex[:8]}{ext}"
+    filepath = os.path.join(wis_station_dir, unique_name)
+
+    try:
+        file.save(filepath)
+    except Exception as save_err:
+        flash(f"❌ Could not save file: {save_err}", "danger")
+        logger.error(f"File save error: {save_err}")
+        return redirect(url_for("admin"))
+
+    # Create database record
+    try:
+        with SessionLocal() as db:
+            db_doc = StationWISDocument(
+                station_id=station_id,
+                file_name=original_name,
+                file_path=filepath,
+                uploaded_by=request.authorization.username if request.authorization else None,
+            )
+            db.add(db_doc)
+            db.commit()
+            logger.info(f"Station WIS document uploaded: station_id={station_id}, file='{original_name}'")
+            flash(f"✅ WIS document '{original_name}' uploaded for station '{station.station_code}'.", "success")
+    except Exception as db_err:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        flash(f"❌ Could not save document record: {db_err}", "danger")
+        logger.error(f"Database save error for station WIS: {db_err}")
+
+    return redirect(url_for("admin"))
+
+
+# ===========================================================================
+# ROUTES — WIS Document Retrieval & Download
+# ===========================================================================
+
+@app.route("/download-shop-wis/<int:doc_id>")
+@requires_auth
+def download_shop_wis(doc_id):
+    """Download a shop-level WIS document."""
+    with SessionLocal() as db:
+        doc = db.query(ShopWISDocument).filter_by(id=doc_id).first()
+        if not doc:
+            flash("Document not found.", "danger")
+            return redirect(url_for("admin"))
+        
+        if not os.path.exists(doc.file_path):
+            flash("Document file not found on disk.", "danger")
+            return redirect(url_for("admin"))
+        
+        try:
+            return send_file(
+                doc.file_path,
+                as_attachment=True,
+                download_name=doc.file_name,
+                mimetype="application/octet-stream"
+            )
+        except Exception as e:
+            logger.error(f"Download failed for doc {doc_id}: {e}")
+            flash(f"Download failed: {e}", "danger")
+            return redirect(url_for("admin"))
+
+
+@app.route("/view-shop-wis/<int:doc_id>")
+def view_shop_wis(doc_id):
+    """View a shop-level WIS document in browser (for PDF/media)."""
+    with SessionLocal() as db:
+        doc = db.query(ShopWISDocument).filter_by(id=doc_id).first()
+        if not doc:
+            return jsonify({"error": "Document not found"}), 404
+        
+        if not os.path.exists(doc.file_path):
+            return jsonify({"error": "Document file not found"}), 404
+        
+        try:
+            ext = os.path.splitext(doc.file_name.lower())[1]
+            mimetype_map = {
+                ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                ".ppt": "application/vnd.ms-powerpoint",
+                ".pdf": "application/pdf",
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+            }
+            mimetype = mimetype_map.get(ext, "application/octet-stream")
+            return send_file(doc.file_path, mimetype=mimetype)
+        except Exception as e:
+            logger.error(f"View failed for doc {doc_id}: {e}")
+            return jsonify({"error": "View failed"}), 500
+
+
+@app.route("/download-station-wis/<int:doc_id>")
+@requires_auth
+def download_station_wis(doc_id):
+    """Download a station-level WIS document."""
+    with SessionLocal() as db:
+        doc = db.query(StationWISDocument).filter_by(id=doc_id).first()
+        if not doc:
+            flash("Document not found.", "danger")
+            return redirect(url_for("admin"))
+        
+        if not os.path.exists(doc.file_path):
+            flash("Document file not found on disk.", "danger")
+            return redirect(url_for("admin"))
+        
+        try:
+            return send_file(
+                doc.file_path,
+                as_attachment=True,
+                download_name=doc.file_name,
+                mimetype="application/octet-stream"
+            )
+        except Exception as e:
+            logger.error(f"Download failed for doc {doc_id}: {e}")
+            flash(f"Download failed: {e}", "danger")
+            return redirect(url_for("admin"))
+
+
+@app.route("/view-station-wis/<int:doc_id>")
+def view_station_wis(doc_id):
+    """View a station-level WIS document in browser (for PDF/media)."""
+    with SessionLocal() as db:
+        doc = db.query(StationWISDocument).filter_by(id=doc_id).first()
+        if not doc:
+            return jsonify({"error": "Document not found"}), 404
+        
+        if not os.path.exists(doc.file_path):
+            return jsonify({"error": "Document file not found"}), 404
+        
+        try:
+            ext = os.path.splitext(doc.file_name.lower())[1]
+            mimetype_map = {
+                ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                ".ppt": "application/vnd.ms-powerpoint",
+                ".pdf": "application/pdf",
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+            }
+            mimetype = mimetype_map.get(ext, "application/octet-stream")
+            return send_file(doc.file_path, mimetype=mimetype)
+        except Exception as e:
+            logger.error(f"View failed for doc {doc_id}: {e}")
+            return jsonify({"error": "View failed"}), 500
+
+
+# ===========================================================================
+# ROUTES — WIS Document Viewer Pages
+# ===========================================================================
+
+@app.route("/shop/wis/<int:doc_id>")
+def shop_wis_viewer(doc_id):
+    """Display shop WIS document viewer page with metadata."""
+    with SessionLocal() as db:
+        doc = db.query(ShopWISDocument).filter_by(id=doc_id).first()
+        if not doc:
+            flash("WIS document not found.", "danger")
+            return redirect(url_for("index"))
+        
+        shop = doc.shop
+        return render_template(
+            "wis-viewer.html",
+            doc_id=doc.id,
+            file_name=doc.file_name,
+            uploaded_at=doc.uploaded_at,
+            uploaded_by=doc.uploaded_by,
+            entity_type="shop",
+            entity_name=shop.name,
+            entity_code=shop.shop_code,
+            view_url=url_for("view_shop_wis", doc_id=doc.id),
+            download_url=url_for("download_shop_wis", doc_id=doc.id),
+        )
+
+
+@app.route("/station/wis/<int:doc_id>")
+def station_wis_viewer(doc_id):
+    """Display station WIS document viewer page with metadata."""
+    with SessionLocal() as db:
+        doc = db.query(StationWISDocument).filter_by(id=doc_id).first()
+        if not doc:
+            flash("WIS document not found.", "danger")
+            return redirect(url_for("index"))
+        
+        station = doc.station
+        shop = station.shop
+        return render_template(
+            "wis-viewer.html",
+            doc_id=doc.id,
+            file_name=doc.file_name,
+            uploaded_at=doc.uploaded_at,
+            uploaded_by=doc.uploaded_by,
+            entity_type="station",
+            entity_name=station.station_code,
+            entity_code=station.station_code,
+            station_id=station.id,
+            shop_code=shop.shop_code if shop else "N/A",
+            shop_name=shop.name if shop else "N/A",
+            view_url=url_for("view_station_wis", doc_id=doc.id),
+            download_url=url_for("download_station_wis", doc_id=doc.id),
+        )
+
+
 def _wal_checkpoint():
     try:
         with engine.connect() as conn:
@@ -800,6 +1145,7 @@ def _wal_checkpoint():
             logger.info("WAL checkpoint finalized safely on shutdown sequence.")
     except Exception as e:
         logger.warning(f"WAL checkpoint failure: {e}")
+
 
 
 atexit.register(_wal_checkpoint)

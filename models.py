@@ -61,6 +61,7 @@ class Shop(Base):
 
     # Relationships
     stations   = relationship("Station", back_populates="shop", cascade="all, delete-orphan")
+    wis_documents = relationship("ShopWISDocument", back_populates="shop", cascade="all, delete-orphan")
 
 
 class Station(Base):
@@ -84,6 +85,7 @@ class Station(Base):
     tool_links      = relationship("ToolStationMap", back_populates="station", cascade="all, delete-orphan")
     skill_links     = relationship("SkillStationMap", back_populates="station", cascade="all, delete-orphan")
     operation_links = relationship("StationOperationMap", back_populates="station", cascade="all, delete-orphan")
+    wis_documents   = relationship("StationWISDocument", back_populates="station", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_station_shop", "shop_id"),
@@ -452,4 +454,42 @@ class MappingScore(Base):
 
     __table_args__ = (
         UniqueConstraint("source_code", "target_code", "method", name="uq_mapping_score"),
+    )
+
+
+class ShopWISDocument(Base):
+    """WIS document attached to a manufacturing shop."""
+    __tablename__ = "shop_wis_documents"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    shop_id    = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False)
+    file_name  = Column(String(255), nullable=False)
+    file_path  = Column(String(500), nullable=False)
+    uploaded_by = Column(String(64), nullable=True)
+    uploaded_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    # Relationships
+    shop = relationship("Shop", back_populates="wis_documents")
+
+    __table_args__ = (
+        Index("ix_shop_wis_shop_id", "shop_id"),
+    )
+
+
+class StationWISDocument(Base):
+    """WIS document attached to a workstation."""
+    __tablename__ = "station_wis_documents"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    station_id = Column(Integer, ForeignKey("stations.id", ondelete="CASCADE"), nullable=False)
+    file_name  = Column(String(255), nullable=False)
+    file_path  = Column(String(500), nullable=False)
+    uploaded_by = Column(String(64), nullable=True)
+    uploaded_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    # Relationships
+    station = relationship("Station", back_populates="wis_documents")
+
+    __table_args__ = (
+        Index("ix_station_wis_station_id", "station_id"),
     )

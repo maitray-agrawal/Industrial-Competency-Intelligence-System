@@ -143,7 +143,7 @@ def detect_dataset_type(df: pd.DataFrame) -> str:
     if shop_required_slugs.issubset(slugs):
         return "station_data"
 
-    # TCF Syllabus: must have topic + sub-topic
+    # Syllabus: must have topic + sub-topic
     tcf_required_slugs = {re.sub(r"[^a-z0-9]", "", c) for c in TCF_REQUIRED_COLS}
     if tcf_required_slugs.issubset(slugs):
         return "tcf_data"
@@ -151,7 +151,7 @@ def detect_dataset_type(df: pd.DataFrame) -> str:
     raise ValueError(
         f"Cannot identify dataset type. "
         f"Shop Data requires columns {sorted(SHOP_DATA_REQUIRED)}; "
-        f"TCF Syllabus requires {sorted(TCF_REQUIRED_COLS)}. "
+        f"Syllabus requires {sorted(TCF_REQUIRED_COLS)}. "
         f"Found: {list(df.columns)}."
     )
 
