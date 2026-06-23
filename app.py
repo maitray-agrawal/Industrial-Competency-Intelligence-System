@@ -108,7 +108,8 @@ def too_large(e):
 def _get_system_stats() -> dict:
     with SessionLocal() as db:
         return {
-            "shops":      db.query(Shop).count(),
+            # Exclude the virtual/wrapper WELD_SHOP from visible shop counts
+            "shops":      db.query(Shop).filter(Shop.shop_code != "WELD_SHOP").count(),
             "stations":   db.query(Station).count(),
             "processes":  db.query(Process).count(),
             "operations": db.query(Operation).count(),
@@ -233,56 +234,123 @@ def _fmt_zone(zone_raw: str) -> str:
         return zone_raw.strip()
 
 
-def _parse_station_hierarchy(stations):
+def _parse_station_hierarchy(stations, shop_code: str | None = None):
     """
     Accepts a list of Station ORM objects (already ordered by row_order from the
     query) and returns a structured hierarchy that PRESERVES Excel insertion order.
-    Grouping key: CELL + LINE + ZONE NO.
+    Grouping adapts to `shop_code`. Top-level entries returned have the shape
+    {label, zones: [{label, zone_badge, stations: [...]}, ...]}. The parser
+    selects the most-relevant non-empty fields per shop type and never
+    creates empty hierarchy levels.
     """
-    seen_keys = []
+    shop_map = {
+        "TCF_1":       ["cell", "line", "zone_no"],
+        "ENGINE_SHOP": ["cell", "line", "zone_no"],
+        "TRANSAXLE_SHOP": ["cell", "line", "zone_no"],
+        "JLR":        ["cell", "line", "zone_no"],
+        "EV_SHOP":     ["cell", "line", "zone_no"],
+        "X4_BIW":      ["cell", "line", "zone_no"],
+        "X1_BIW":      ["line", "zone_no"],
+        "PAINT_SHOP":  ["line", "zone_no"],
+        "Q5_BIW":      ["line", "zone_no"],
+        "NOVA_BIW":    ["line"],
+        "TCF_2":       ["shop"],
+    }
+
+    def _norm_shop_key(code: str | None) -> str:
+        if not code:
+            return ""
+        return str(code).strip().upper()
+
+    def _group_label(preferred_fields: list[str]) -> str:
+        if not preferred_fields:
+            return "Group"
+        field = preferred_fields[0]
+        if field == "cell":
+            return "Cell"
+        if field == "line":
+            return "Line"
+        if field == "shop":
+            return "Shop"
+        if field == "zone_no":
+            return "Zone"
+        return field.replace("_", " ").title()
+
+    key = _norm_shop_key(shop_code)
+    preferred = shop_map.get(key, ["cell", "line", "zone_no"])  # default
+    group_label = _group_label(preferred)
+
+    def _val(stn, fld):
+        if fld == "cell":
+            return (stn.cell or "").strip()
+        if fld == "line":
+            return (stn.line or "").strip()
+        if fld == "zone_no":
+            return (stn.zone_no or "").strip()
+        if fld == "stations":
+            return (stn.raw_station_id or stn.station_code or "").strip()
+        return str(getattr(stn, fld, "") or "").strip()
+
+    order = []
     groups = {}
 
     for stn in stations:
-        cell_raw = (stn.cell or "").strip()
-        line_raw = (stn.line or "").strip()
-        zone_raw = (stn.zone_no or "").strip()
-        key = (cell_raw, line_raw, zone_raw)
+        vals = [_val(stn, f) for f in preferred]
+        path = [v for v in vals if v]
 
-        if key not in groups:
-            seen_keys.append(key)
-            groups[key] = []
+        if not path:
+            top = ""
+            zone = ""
+        else:
+            top = path[0]
+            zone = path[1] if len(path) > 1 else ""
 
-        groups[key].append({
-            "id":     stn.id,
+        gkey = (top, zone)
+        if gkey not in groups:
+            order.append(gkey)
+            groups[gkey] = []
+
+        station_item = {
+            "id": stn.id,
             "raw_id": stn.raw_station_id or stn.station_code or str(stn.id),
-            "name":   stn.name,
-        })
+            "name": stn.name,
+        }
 
-    cells_order = []
-    cells_zones = {}
+        processes = []
+        for proc in getattr(stn, "processes", []) or []:
+            processes.append({
+                "id": proc.id,
+                "name": proc.name,
+                "operation_count": len(getattr(proc, "operations", []) or []),
+            })
+        if processes:
+            station_item["processes"] = processes
 
-    for (cell_raw, line_raw, zone_raw) in seen_keys:
-        if cell_raw not in cells_zones:
-            cells_order.append(cell_raw)
-            cells_zones[cell_raw] = []
-        cells_zones[cell_raw].append((line_raw, zone_raw))
+        groups[gkey].append(station_item)
+
+    tops = []
+    top_to_zones = {}
+    for top, zone in order:
+        if top not in tops:
+            tops.append(top)
+            top_to_zones[top] = []
+        top_to_zones[top].append((zone, groups[(top, zone)]))
 
     hierarchy = []
-    for cell_raw in cells_order:
+    for top in tops:
         zones = []
-        for (line_raw, zone_raw) in cells_zones[cell_raw]:
-            stns = groups[(cell_raw, line_raw, zone_raw)]
+        for zone_label, stns in top_to_zones[top]:
             zones.append({
-                "label":      line_raw,
-                "zone_badge": _fmt_zone(zone_raw),
-                "stations":   stns,
+                "label": zone_label,
+                "zone_badge": _fmt_zone(zone_label) if zone_label else "",
+                "stations": stns,
             })
         hierarchy.append({
-            "label": cell_raw,
+            "label": top,
             "zones": zones,
         })
 
-    return hierarchy
+    return hierarchy, group_label
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +427,7 @@ def shop_detail(shop_code):
         if not shop:
             flash(f"Shop '{shop_code}' not found.", "danger")
             return redirect(url_for("index"))
-        stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order.nulls_last(), Station.id).all()
+        stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order, Station.id).all()
         wis_docs = db.query(ShopWISDocument).filter_by(shop_id=shop.id).order_by(ShopWISDocument.uploaded_at.desc()).all()
         is_admin = request.authorization and check_auth(request.authorization.username, request.authorization.password)
 
@@ -373,10 +441,10 @@ def shop_detail(shop_code):
                     wis_docs=wis_docs, is_admin=is_admin,
                 )
 
-        hierarchy = _parse_station_hierarchy(stations)
+        hierarchy, group_label = _parse_station_hierarchy(stations, shop.shop_code)
         return render_template(
             "shop.html", shop=shop,
-            hierarchy=hierarchy, subgroups=None, subgroup=None,
+            hierarchy=hierarchy, group_label=group_label, subgroups=None, subgroup=None,
             wis_docs=wis_docs, is_admin=is_admin,
         )
 
@@ -389,21 +457,21 @@ def shop_subgroup(shop_code, subgroup):
         if not shop:
             flash(f"Shop '{shop_code}' not found.", "danger")
             return redirect(url_for("index"))
-        stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order.nulls_last(), Station.id).all()
+        stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order, Station.id).all()
         wis_docs = db.query(ShopWISDocument).filter_by(shop_id=shop.id).order_by(ShopWISDocument.uploaded_at.desc()).all()
         is_admin = request.authorization and check_auth(request.authorization.username, request.authorization.password)
 
         if shop_code == "WELD_SHOP":
-            hierarchy = _parse_weld_biw_subhierarchy(stations, subgroup)
+            hierarchy, group_label = _parse_weld_biw_subhierarchy(stations, subgroup)
             meta = _WELD_BIW_META.get(subgroup, {})
             subgroup_label = meta.get("label", subgroup.replace("_", " "))
         else:
-            hierarchy = _parse_station_hierarchy(stations)
+            hierarchy, group_label = _parse_station_hierarchy(stations, shop.shop_code)
             subgroup_label = subgroup.replace("_", " ")
 
         return render_template(
             "shop.html", shop=shop,
-            hierarchy=hierarchy, subgroups=None, subgroup=subgroup_label,
+            hierarchy=hierarchy, group_label=group_label, subgroups=None, subgroup=subgroup_label,
             wis_docs=wis_docs, is_admin=is_admin,
         )
 
@@ -414,12 +482,13 @@ def api_shop_hierarchy(shop_code):
         shop = db.query(Shop).filter_by(shop_code=shop_code).first()
         if not shop:
             return jsonify({"error": f"Shop '{shop_code}' not found"}), 404
-        stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order.nulls_last(), Station.id).all()
-        hierarchy = _parse_station_hierarchy(stations)
+        stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order, Station.id).all()
+        hierarchy, group_label = _parse_station_hierarchy(stations, shop.shop_code)
         return jsonify({
             "shop_code": shop.shop_code,
             "shop_name": shop.name,
             "hierarchy": hierarchy,
+            "group_label": group_label,
         })
 
 @app.route("/api/competency/<int:station_id>")
@@ -634,10 +703,16 @@ def ingest():
         # Surface any missing schema columns as a non-blocking warning
         missing_cols = stats.get("missing_columns", [])
         if missing_cols:
-            col_list = ", ".join(missing_cols)
+            # Prefer user-friendly display names when available
+            try:
+                from data_engine import SHOP_DATA_SCHEMA, SHOP_DATA_DISPLAY
+                disp_map = {k: v for k, v in zip(SHOP_DATA_SCHEMA, SHOP_DATA_DISPLAY)}
+                display_cols = [disp_map.get(c, c) for c in missing_cols]
+            except Exception:
+                display_cols = missing_cols
+            col_list = ", ".join(display_cols)
             flash(
-                f"⚠️ Upload succeeded with warnings. "
-                f"Missing columns (stored as empty): {col_list}",
+                f"⚠️ Missing columns detected: {col_list}\nContinuing with available data.",
                 "warning",
             )
 
@@ -724,7 +799,13 @@ def ingest_confirm():
         )
         missing_cols = stats.get("missing_columns", [])
         if missing_cols:
-            flash(f"⚠️ Missing columns (stored as empty): {', '.join(missing_cols)}", "warning")
+            try:
+                from data_engine import SHOP_DATA_SCHEMA, SHOP_DATA_DISPLAY
+                disp_map = {k: v for k, v in zip(SHOP_DATA_SCHEMA, SHOP_DATA_DISPLAY)}
+                display_cols = [disp_map.get(c, c) for c in missing_cols]
+            except Exception:
+                display_cols = missing_cols
+            flash(f"⚠️ Missing columns detected: {', '.join(display_cols)}\nContinuing with available data.", "warning")
 
     except Exception as e:
         flash(f"❌ Reprocess failed: {e}", "danger")

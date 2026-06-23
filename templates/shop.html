@@ -35,7 +35,7 @@
             {{ total_stns.n }} Station{% if total_stns.n != 1 %}s{% endif %}
         {% elif hierarchy %}
             {# Tree mode: count from hierarchy #}
-            {{ hierarchy | length }} Cell{% if hierarchy | length != 1 %}s{% endif %} &mdash;
+            {{ hierarchy | length }} {{ group_label }}{% if hierarchy | length != 1 %}s{% endif %} &mdash;
             {% set total_zones = namespace(n=0) %}
             {% set total_stns  = namespace(n=0) %}
             {% for cell in hierarchy %}
@@ -119,20 +119,31 @@
 
                     <div class="tree-zone-body">
                         {% for stn in zone.stations %}
-                        <a
-                            href="{{ url_for('station_detail', station_id=stn.id) }}"
-                            class="tree-station"
-                            id="tree-stn-{{ stn.id }}"
-                            data-label="{{ stn.raw_id | lower }} {{ stn.name | lower }}"
-                            role="treeitem"
-                        >
-                            <span class="tree-station-icon">🔧</span>
-                            <span class="tree-station-code">{{ stn.raw_id }}</span>
-                            {% if stn.name and stn.name != stn.raw_id %}
-                            <span class="tree-station-name">{{ stn.name }}</span>
+                        <details class="tree-station" open data-label="{{ stn.raw_id | lower }} {{ stn.name | lower }}">
+                            <summary class="tree-station-summary" role="treeitem" aria-expanded="true">
+                                <span class="tree-station-icon">🔧</span>
+                                <a href="{{ url_for('station_detail', station_id=stn.id) }}" class="tree-station-link">
+                                    <span class="tree-station-code">{{ stn.raw_id }}</span>
+                                    {% if stn.name and stn.name != stn.raw_id %}
+                                    <span class="tree-station-name">{{ stn.name }}</span>
+                                    {% endif %}
+                                </a>
+                                <span class="tree-station-arrow">→</span>
+                            </summary>
+                            {% if stn.processes %}
+                            <div class="tree-processes">
+                                {% for proc in stn.processes %}
+                                <div class="tree-process" data-label="{{ proc.name | lower }}">
+                                    <span class="tree-process-icon">⚙️</span>
+                                    <span class="tree-node-label">{{ proc.name }}</span>
+                                    {% if proc.operation_count %}
+                                    <span class="tree-node-count">({{ proc.operation_count }} op{% if proc.operation_count != 1 %}s{% endif %})</span>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
                             {% endif %}
-                            <span class="tree-station-arrow">→</span>
-                        </a>
+                        </details>
                         {% endfor %}
                     </div>
                 </details>
@@ -317,7 +328,14 @@
 
                 stations.forEach(stnEl => {
                     const label = stnEl.dataset.label || '';
-                    const match = !q || label.includes(q);
+                    let processMatch = false;
+                    stnEl.querySelectorAll('.tree-process').forEach(procEl => {
+                        const procLabel = procEl.dataset.label || '';
+                        if (procLabel.includes(q)) {
+                            processMatch = true;
+                        }
+                    });
+                    const match = !q || label.includes(q) || processMatch;
                     stnEl.style.display = match ? '' : 'none';
                     if (match) zoneHasMatch = true;
                 });
