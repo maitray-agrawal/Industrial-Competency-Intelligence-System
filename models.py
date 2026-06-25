@@ -18,7 +18,7 @@ appropriate for immutable industrial records.
 
 from sqlalchemy import (
     Column, Integer, String, Text, Float, DateTime, ForeignKey,
-    JSON, UniqueConstraint, Index, func
+    JSON, UniqueConstraint, Index, func, Boolean
 )
 from sqlalchemy.orm import relationship
 from database import Base
@@ -62,6 +62,8 @@ class Shop(Base):
     # Relationships
     stations   = relationship("Station", back_populates="shop", cascade="all, delete-orphan")
     wis_documents = relationship("ShopWISDocument", back_populates="shop", cascade="all, delete-orphan")
+    wis_workbooks = relationship("ShopWISWorkbook", back_populates="shop", cascade="all, delete-orphan")
+    ppe_workbooks = relationship("ShopPPEWorkbook", back_populates="shop", cascade="all, delete-orphan")
 
 
 class Station(Base):
@@ -86,6 +88,8 @@ class Station(Base):
     skill_links     = relationship("SkillStationMap", back_populates="station", cascade="all, delete-orphan")
     operation_links = relationship("StationOperationMap", back_populates="station", cascade="all, delete-orphan")
     wis_documents   = relationship("StationWISDocument", back_populates="station", cascade="all, delete-orphan")
+    wis_sheets      = relationship("StationWISSheet", back_populates="station", cascade="all, delete-orphan")
+    ppe_sheets      = relationship("StationPPESheet", back_populates="station", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_station_shop", "shop_id"),
@@ -473,6 +477,102 @@ class ShopWISDocument(Base):
 
     __table_args__ = (
         Index("ix_shop_wis_shop_id", "shop_id"),
+    )
+
+
+class ShopWISWorkbook(Base):
+    """Workbook attached to a manufacturing shop and parsed into station-specific sheets."""
+    __tablename__ = "shop_wis_workbooks"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    shop_id         = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False)
+    file_name       = Column(String(255), nullable=False)
+    file_path       = Column(String(500), nullable=False)
+    sheet_count     = Column(Integer, nullable=False, default=0)
+    version_number  = Column(Integer, nullable=False, default=1)
+    active          = Column(Boolean, nullable=False, default=True)
+    archived_at     = Column(DateTime, nullable=True)
+    change_summary  = Column(Text, nullable=True)
+    uploaded_by     = Column(String(64), nullable=True)
+    uploaded_at     = Column(DateTime, server_default=func.now(), nullable=False)
+
+    # Relationships
+    shop = relationship("Shop", back_populates="wis_workbooks")
+    sheets = relationship("StationWISSheet", back_populates="workbook", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_shop_wis_workbook_shop_id", "shop_id"),
+        Index("ix_shop_wis_workbook_active", "shop_id", "active"),
+    )
+
+
+class StationWISSheet(Base):
+    """A single sheet from a shop WIS workbook that maps to a station."""
+    __tablename__ = "station_wis_sheets"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    workbook_id   = Column(Integer, ForeignKey("shop_wis_workbooks.id", ondelete="CASCADE"), nullable=False)
+    station_id    = Column(Integer, ForeignKey("stations.id", ondelete="SET NULL"), nullable=True)
+    sheet_name    = Column(String(255), nullable=False)
+    sheet_index   = Column(Integer, nullable=False, default=0)
+    match_status  = Column(String(32), nullable=False, default="auto")
+    uploaded_at   = Column(DateTime, server_default=func.now(), nullable=False)
+
+    # Relationships
+    workbook = relationship("ShopWISWorkbook", back_populates="sheets")
+    station = relationship("Station", back_populates="wis_sheets")
+
+    __table_args__ = (
+        Index("ix_station_wis_sheet_workbook", "workbook_id"),
+        Index("ix_station_wis_sheet_station", "station_id"),
+    )
+
+
+class ShopPPEWorkbook(Base):
+    """PPE workbook attached to a manufacturing shop and parsed into station-specific sheets."""
+    __tablename__ = "shop_ppe_workbooks"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    shop_id         = Column(Integer, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False)
+    file_name       = Column(String(255), nullable=False)
+    file_path       = Column(String(500), nullable=False)
+    sheet_count     = Column(Integer, nullable=False, default=0)
+    version_number  = Column(Integer, nullable=False, default=1)
+    active          = Column(Boolean, nullable=False, default=True)
+    archived_at     = Column(DateTime, nullable=True)
+    change_summary  = Column(Text, nullable=True)
+    uploaded_by     = Column(String(64), nullable=True)
+    uploaded_at     = Column(DateTime, server_default=func.now(), nullable=False)
+
+    # Relationships
+    shop = relationship("Shop", back_populates="ppe_workbooks")
+    sheets = relationship("StationPPESheet", back_populates="workbook", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_shop_ppe_workbook_shop_id", "shop_id"),
+        Index("ix_shop_ppe_workbook_active", "shop_id", "active"),
+    )
+
+
+class StationPPESheet(Base):
+    """A single sheet from a shop PPE workbook that maps to a station."""
+    __tablename__ = "station_ppe_sheets"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    workbook_id   = Column(Integer, ForeignKey("shop_ppe_workbooks.id", ondelete="CASCADE"), nullable=False)
+    station_id    = Column(Integer, ForeignKey("stations.id", ondelete="SET NULL"), nullable=True)
+    sheet_name    = Column(String(255), nullable=False)
+    sheet_index   = Column(Integer, nullable=False, default=0)
+    match_status  = Column(String(32), nullable=False, default="auto")
+    uploaded_at   = Column(DateTime, server_default=func.now(), nullable=False)
+
+    # Relationships
+    workbook = relationship("ShopPPEWorkbook", back_populates="sheets")
+    station = relationship("Station", back_populates="ppe_sheets")
+
+    __table_args__ = (
+        Index("ix_station_ppe_sheet_workbook", "workbook_id"),
+        Index("ix_station_ppe_sheet_station", "station_id"),
     )
 
 

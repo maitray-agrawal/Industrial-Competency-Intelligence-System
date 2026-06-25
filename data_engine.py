@@ -66,6 +66,7 @@ SHOP_ALIASES: dict[str, str] = {
     "EV_SHOP":      "EV SHOP",
     "ENGINE_SHOP":  "ENGINE SHOP",
     "TRANSAXLE_SHOP": "TRANSAXLE SHOP",
+    "PRESS_SHOP":   "PRESS SHOP",
     "TCF_1":        "TCF 1",
     "TCF_2":        "TCF 2",
     "JLR_SHOP":     "TJLR",
@@ -110,6 +111,10 @@ SHOP_SCHEMAS: dict[str, list[str]] = {
         "TOOLS / EQUIPMENT", "OPERATION SUMMARY", "SKILL PART",
     ],
     "TRANSAXLE SHOP": [
+        "SHOP", "CELL", "LINE", "ZONE NO", "STATIONS", "PROCESS",
+        "TOOLS / EQUIPMENT", "OPERATION SUMMARY", "SKILL PART",
+    ],
+    "PRESS SHOP": [
         "SHOP", "CELL", "LINE", "ZONE NO", "STATIONS", "PROCESS",
         "TOOLS / EQUIPMENT", "OPERATION SUMMARY", "SKILL PART",
     ],
@@ -976,8 +981,13 @@ class IngestionPipeline:
         # If admin selected a shop, apply shop-specific schema mapping first
         if shop and isinstance(shop, str):
             shop_key = shop.strip().upper()
-            # Resolve alias (UI code -> schema display key) non-destructively
-            schema_key = SHOP_ALIASES.get(shop_key, shop_key)
+            schema_key = SHOP_ALIASES.get(shop_key)
+            if not schema_key:
+                schema_key = SHOP_ALIASES.get(shop_key.replace(" ", "_"), shop_key)
+            if not schema_key and shop_key.replace("_", " ") in SHOP_SCHEMAS:
+                schema_key = shop_key.replace("_", " ")
+            if not schema_key and shop_key in SHOP_SCHEMAS:
+                schema_key = shop_key
             logger.info(f"Shop='{shop_key}' Schema='{schema_key}'")
             schema = SHOP_SCHEMAS.get(schema_key)
             if schema:

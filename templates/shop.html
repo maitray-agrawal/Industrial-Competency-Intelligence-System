@@ -53,7 +53,8 @@
 <!-- Tab Navigation -->
 <nav class="tab-nav" id="shop-tab-nav" role="tablist" aria-label="Shop sections">
     <button class="tab-btn active" onclick="switchTab('overview',this)" id="tab-overview" role="tab">🏭 Stations</button>
-    <button class="tab-btn" onclick="switchTab('wis',this)" id="tab-wis" role="tab">📄 WIS Documents{% if wis_docs %} ({{ wis_docs | length }}){% endif %}</button>
+    <button class="tab-btn" onclick="switchTab('wis',this)" id="tab-wis" role="tab">� WIS Workbooks{% if wis_workbooks %} ({{ wis_workbooks | length }}){% endif %}</button>
+    <button class="tab-btn" onclick="switchTab('ppe',this)" id="tab-ppe" role="tab">🧰 PPE Workbooks{% if ppe_workbooks %} ({{ ppe_workbooks | length }}){% endif %}</button>
 </nav>
 
 <!-- ══════════════════════ TAB 1: STATIONS/OVERVIEW ══════════════════════ -->
@@ -161,65 +162,63 @@
 {% endif %}
 </div>
 
-<!-- ══════════════════════ TAB 2: WIS DOCUMENTS ══════════════════════ -->
+<!-- ══════════════════════ TAB 2: WIS WORKBOOKS ══════════════════════ -->
 <div class="shop-tab-panel" id="panel-wis" role="tabpanel" hidden>
 
 {% if is_admin %}
-<!-- Upload Section for Admin -->
 <div class="wis-upload-card card fade-in" style="margin-bottom: 2rem;">
     <div class="upload-header">
-        <h3>Upload Shop WIS Document</h3>
-        <p class="upload-hint">Add PowerPoint presentations (.ppt, .pptx)</p>
+        <h3>Upload Shop WIS Workbook</h3>
+        <p class="upload-hint">Upload a workbook with one sheet per station (.xlsx, .xlsm)</p>
     </div>
-    <form action="{{ url_for('upload_shop_wis') }}" method="POST" enctype="multipart/form-data" class="wis-upload-form">
+    <form action="{{ url_for('upload_shop_wis_workbook', shop_code=shop.shop_code) }}" method="POST" enctype="multipart/form-data" class="wis-upload-form">
         <input type="hidden" name="shop_code" value="{{ shop.shop_code }}">
-        
         <div class="form-group">
             <label for="wis-file-input" class="file-input-label">
                 <div class="file-drop-area">
                     <span class="drop-icon">📤</span>
-                    <span class="drop-text">Drag & drop or click to select file</span>
-                    <span class="drop-hint">.ppt or .pptx only</span>
+                    <span class="drop-text">Drag & drop or click to select workbook</span>
+                    <span class="drop-hint">.xlsx or .xlsm only</span>
+                    <button type="button" id="wis-choose-workbook-btn" class="secondary-btn" style="margin-top:.75rem;">📄 Choose Workbook</button>
                 </div>
             </label>
-            <input type="file" id="wis-file-input" name="file" accept=".ppt,.pptx" required style="display:none;">
+            <input type="file" id="wis-file-input" name="file" accept=".xlsx,.xlsm" required style="display:none;">
         </div>
-
-        <div id="file-preview" class="file-preview" style="display:none; margin: 1rem 0;">
-            <span id="file-preview-name"></span>
-            <button type="button" class="file-preview-remove" onclick="clearFileInput()">✕</button>
-        </div>
-
         <div class="form-actions">
-            <button type="submit" class="primary-btn">🚀 Upload Document</button>
+            <button type="submit" class="primary-btn">🚀 Upload Workbook</button>
         </div>
     </form>
 </div>
 {% endif %}
 
-<!-- Documents List -->
 <div class="wis-documents-section">
-    {% if wis_docs %}
-    <h3>Uploaded Documents ({{ wis_docs | length }})</h3>
+    {% if wis_workbooks %}
+    <h3>Uploaded WIS Workbooks ({{ wis_workbooks | length }})</h3>
     <div class="wis-documents-list">
-        {% for doc in wis_docs %}
+        {% for workbook in wis_workbooks %}
         <div class="wis-doc-card card">
             <div class="doc-header">
-                <div class="doc-icon">📊</div>
+                <div class="doc-icon">📘</div>
                 <div class="doc-info">
-                    <div class="doc-name">{{ doc.file_name }}</div>
+                    <div class="doc-name">{{ workbook.file_name }}</div>
                     <div class="doc-meta">
-                        <span class="doc-date">Uploaded: {{ doc.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</span>
-                        {% if doc.uploaded_by %}
-                        <span class="doc-by"> by {{ doc.uploaded_by }}</span>
+                        <span class="doc-date">Uploaded: {{ workbook.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        <span class="doc-by">Sheets: {{ workbook.sheet_count }}</span>
+                        {% if workbook.uploaded_by %}
+                        <span class="doc-by">by {{ workbook.uploaded_by }}</span>
                         {% endif %}
                     </div>
                 </div>
             </div>
-            <div class="doc-actions">
-                <a href="{{ url_for('shop_wis_viewer', doc_id=doc.id) }}" class="icon-btn doc-view-btn" title="View" target="_blank">👁️</a>
-                {% if is_admin %}
-                <a href="{{ url_for('download_shop_wis', doc_id=doc.id) }}" class="icon-btn doc-download-btn" title="Download">⬇️</a>
+            <div class="doc-details" style="margin-top: .75rem;">
+                {% if workbook.sheets %}
+                <ul style="margin:0; padding-left:1.1rem;">
+                    {% for sheet in workbook.sheets %}
+                    <li><strong>{{ sheet.sheet_name }}</strong> — {% if sheet.station %}{{ sheet.station.station_code }}{% else %}Unmatched{% endif %}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p style="margin:0; color:var(--text-dim);">No sheet mapping captured.</p>
                 {% endif %}
             </div>
         </div>
@@ -227,9 +226,83 @@
     </div>
     {% else %}
     <div class="empty-state">
-        <p>No WIS documents uploaded for this shop yet.</p>
+        <p>No WIS workbooks uploaded for this shop yet.</p>
         {% if is_admin %}
-        <p>Use the upload section above to add PowerPoint presentations.</p>
+        <p>Use the upload section above to add an Excel workbook with one station sheet per tab.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+</div>
+
+<!-- ══════════════════════ TAB 3: PPE WORKBOOKS ══════════════════════ -->
+<div class="shop-tab-panel" id="panel-ppe" role="tabpanel" hidden>
+
+{% if is_admin %}
+<div class="wis-upload-card card fade-in" style="margin-bottom: 2rem;">
+    <div class="upload-header">
+        <h3>Upload Shop PPE Workbook</h3>
+        <p class="upload-hint">Upload a workbook with one sheet per station (.xlsx, .xlsm)</p>
+    </div>
+    <form action="{{ url_for('upload_shop_ppe_workbook', shop_code=shop.shop_code) }}" method="POST" enctype="multipart/form-data" class="wis-upload-form">
+        <input type="hidden" name="shop_code" value="{{ shop.shop_code }}">
+        <div class="form-group">
+            <label for="ppe-file-input" class="file-input-label">
+                <div class="file-drop-area">
+                    <span class="drop-icon">🧰</span>
+                    <span class="drop-text">Drag & drop or click to select workbook</span>
+                    <span class="drop-hint">.xlsx or .xlsm only</span>
+                    <button type="button" id="ppe-choose-workbook-btn" class="secondary-btn" style="margin-top:.75rem;">📄 Choose Workbook</button>
+                </div>
+            </label>
+            <input type="file" id="ppe-file-input" name="file" accept=".xlsx,.xlsm" required style="display:none;">
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="primary-btn">🚀 Upload Workbook</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+<div class="wis-documents-section">
+    {% if ppe_workbooks %}
+    <h3>Uploaded PPE Workbooks ({{ ppe_workbooks | length }})</h3>
+    <div class="wis-documents-list">
+        {% for workbook in ppe_workbooks %}
+        <div class="wis-doc-card card">
+            <div class="doc-header">
+                <div class="doc-icon">🧰</div>
+                <div class="doc-info">
+                    <div class="doc-name">{{ workbook.file_name }}</div>
+                    <div class="doc-meta">
+                        <span class="doc-date">Uploaded: {{ workbook.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        <span class="doc-by">Sheets: {{ workbook.sheet_count }}</span>
+                        {% if workbook.uploaded_by %}
+                        <span class="doc-by">by {{ workbook.uploaded_by }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="doc-details" style="margin-top: .75rem;">
+                {% if workbook.sheets %}
+                <ul style="margin:0; padding-left:1.1rem;">
+                    {% for sheet in workbook.sheets %}
+                    <li><strong>{{ sheet.sheet_name }}</strong> — {% if sheet.station %}{{ sheet.station.station_code }}{% else %}Unmatched{% endif %}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p style="margin:0; color:var(--text-dim);">No sheet mapping captured.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No PPE workbooks uploaded for this shop yet.</p>
+        {% if is_admin %}
+        <p>Use the upload section above to add an Excel workbook with one station sheet per tab.</p>
         {% endif %}
     </div>
     {% endif %}
@@ -261,25 +334,46 @@
         if (btnEl) btnEl.classList.add('active');
     }
 
+    const wisChooseButton = document.getElementById('wis-choose-workbook-btn');
+    const wisFileInput = document.getElementById('wis-file-input');
+    if (wisChooseButton && wisFileInput) {
+        wisChooseButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            wisFileInput.click();
+        });
+    }
+
+    const ppeChooseButton = document.getElementById('ppe-choose-workbook-btn');
+    const ppeFileInput = document.getElementById('ppe-file-input');
+    if (ppeChooseButton && ppeFileInput) {
+        ppeChooseButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            ppeFileInput.click();
+        });
+    }
+
     // File input handling
-    document.getElementById('wis-file-input')?.addEventListener('change', function() {
+    wisFileInput?.addEventListener('change', function() {
         const preview = document.getElementById('file-preview');
         const previewName = document.getElementById('file-preview-name');
         if (this.files.length > 0) {
-            previewName.textContent = this.files[0].name;
-            preview.style.display = 'flex';
-        } else {
+            if (previewName) previewName.textContent = this.files[0].name;
+            if (preview) preview.style.display = 'flex';
+        } else if (preview) {
             preview.style.display = 'none';
         }
     });
 
     function clearFileInput() {
-        document.getElementById('wis-file-input').value = '';
-        document.getElementById('file-preview').style.display = 'none';
+        wisFileInput.value = '';
+        const preview = document.getElementById('file-preview');
+        const previewName = document.getElementById('file-preview-name');
+        if (preview) preview.style.display = 'none';
+        if (previewName) previewName.textContent = '';
     }
 
     // Drag and drop
-    const fileInput = document.getElementById('wis-file-input');
+    const fileInput = wisFileInput;
     const fileLabel = document.querySelector('.file-input-label');
     
     if (fileLabel) {

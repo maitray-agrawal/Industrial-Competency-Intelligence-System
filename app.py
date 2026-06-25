@@ -3,8 +3,10 @@ import re
 import atexit
 import hashlib
 import uuid as _uuid
-from flask import Flask, render_template, request, Response, redirect, url_for, flash, jsonify, session as flask_session, send_file
+from datetime import datetime
+from flask import Flask, render_template, request, Response, redirect, url_for, flash, jsonify, session as flask_session, send_file, abort
 from werkzeug.utils import secure_filename
+from openpyxl import load_workbook
 
 from database import SessionLocal, engine, init_db
 from models import (
@@ -13,16 +15,19 @@ from models import (
     SkillOperationMap, TopicSkillMap, ToolStationMap, UploadedFile,
     SkillStationMap, StationOperationMap,
     GraphEntity, GraphRelationship,
-    ShopWISDocument, StationWISDocument
+    ShopWISDocument, StationWISDocument,
+    ShopWISWorkbook, StationWISSheet,
+    ShopPPEWorkbook, StationPPESheet,
 )
 from sqlalchemy import Integer as _SAInteger
 from search_engine import SearchAPI, SearchIndexer
-from data_engine import IngestionPipeline
+from data_engine import IngestionPipeline, SHOP_ALIASES
 from heuristic_engine import KnowledgeMapper
 from competency_engine import CompetencyEngine
 from logger import get_logger
 from api_contracts import build_unified_search_entity
 from sqlalchemy import text, func
+from sqlalchemy.orm import joinedload
 
 logger = get_logger("FlaskApp")
 
@@ -37,6 +42,7 @@ UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "upload
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
 ALLOWED_WIS_EXTENSIONS = {".ppt", ".pptx"}
+ALLOWED_WORKBOOK_EXTENSIONS = {".xlsx", ".xlsm"}
 
 DEBUG_MODE = os.environ.get("FLASK_ENV", "production").lower() == "development"
 
@@ -50,6 +56,158 @@ def allowed_wis_file(filename: str) -> bool:
     """Return True only if the file has an allowed PowerPoint extension."""
     ext = os.path.splitext(filename.lower())[1]
     return ext in ALLOWED_WIS_EXTENSIONS
+
+
+def allowed_workbook_file(filename: str) -> bool:
+    """Return True only if the file has an allowed spreadsheet workbook extension."""
+    ext = os.path.splitext(filename.lower())[1]
+    return ext in ALLOWED_WORKBOOK_EXTENSIONS
+
+
+def _normalize_sheet_token(value: str | None) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def _match_station_for_sheet(sheet_name: str, stations: list[Station]) -> Station | None:
+    sheet_key = _normalize_sheet_token(sheet_name)
+    if not sheet_key:
+        return None
+
+    for station in stations:
+        candidates = [station.station_code, station.raw_station_id, station.name]
+        for candidate in candidates:
+            if _normalize_sheet_token(candidate) == sheet_key:
+                return station
+            if sheet_key and _normalize_sheet_token(candidate) and sheet_key in _normalize_sheet_token(candidate):
+                return station
+    return None
+
+
+def _normalize_shop_lookup_value(value: str | None) -> str:
+    if not value:
+        return ""
+    return re.sub(r"[^A-Za-z0-9]+", "_", str(value).strip()).strip("_").upper()
+
+
+def _resolve_shop_record(db, shop_code: str | None) -> Shop | None:
+    raw = (shop_code or "").strip()
+    candidates: set[str] = set()
+    if raw:
+        candidates.update({raw, raw.upper(), _normalize_shop_lookup_value(raw)})
+        candidates.add(raw.replace(" ", "_"))
+        candidates.add(raw.replace("_", " "))
+
+    for candidate in sorted(candidates):
+        if not candidate:
+            continue
+        shop = db.query(Shop).filter_by(shop_code=candidate).first()
+        if shop:
+            return shop
+
+    for candidate in sorted(candidates):
+        if not candidate:
+            continue
+        shop = db.query(Shop).filter(Shop.name.ilike(f"%{candidate}%")) .first()
+        if shop:
+            return shop
+    return None
+
+
+def _read_sheet_preview_rows(file_path: str, sheet_name: str, limit: int = 10) -> list[list[str]]:
+    if not file_path or not os.path.exists(file_path):
+        return []
+    try:
+        workbook = load_workbook(file_path, read_only=True, data_only=True)
+        if sheet_name not in workbook.sheetnames:
+            workbook.close()
+            return []
+        worksheet = workbook[sheet_name]
+        rows: list[list[str]] = []
+        for row in worksheet.iter_rows(min_row=1, max_row=min(limit, worksheet.max_row), values_only=True):
+            rows.append(["" if cell is None else str(cell) for cell in row])
+        workbook.close()
+        return rows
+    except Exception as exc:
+        logger.warning(f"Unable to read sheet preview for {sheet_name}: {exc}")
+        return []
+
+
+def _get_workbook_mimetype(file_path: str) -> str:
+    ext = os.path.splitext(file_path.lower())[1]
+    if ext == ".xlsx":
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    if ext == ".xlsm":
+        return "application/vnd.ms-excel.sheet.macroEnabled.12"
+    if ext == ".xls":
+        return "application/vnd.ms-excel"
+    return "application/octet-stream"
+
+
+def _ensure_workbook_versioning_schema() -> None:
+    try:
+        with engine.begin() as conn:
+            for table_name in ("shop_wis_workbooks", "shop_ppe_workbooks"):
+                columns = {row[1] for row in conn.execute(text(f"PRAGMA table_info('{table_name}')")).fetchall()}
+                if "version_number" not in columns:
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN version_number INTEGER NOT NULL DEFAULT 1"))
+                if "active" not in columns:
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN active BOOLEAN NOT NULL DEFAULT 1"))
+                if "archived_at" not in columns:
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN archived_at DATETIME"))
+                if "change_summary" not in columns:
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN change_summary TEXT"))
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table_name}_active ON {table_name} (shop_id, active)"))
+            conn.commit()
+    except Exception as exc:
+        logger.warning(f"Workbook versioning schema check skipped: {exc}")
+
+
+def _get_next_workbook_version(db, workbook_cls, shop_id: int) -> int:
+    latest = db.query(func.max(workbook_cls.version_number)).filter(workbook_cls.shop_id == shop_id).scalar() or 0
+    return int(latest) + 1
+
+
+def _build_workbook_change_summary(explicit_summary: str | None, workbook_kind: str, previous_active_workbook) -> str:
+    if explicit_summary and explicit_summary.strip():
+        return explicit_summary.strip()
+    if previous_active_workbook:
+        return f"Revised {workbook_kind.upper()} workbook upload; previous active workbook archived."
+    return f"Initial {workbook_kind.upper()} workbook upload."
+
+
+def _archive_previous_active_workbook(db, workbook_cls, shop_id: int, new_version_number: int) -> None:
+    previous_active_workbooks = (
+        db.query(workbook_cls)
+        .filter(workbook_cls.shop_id == shop_id, workbook_cls.active.is_(True))
+        .order_by(workbook_cls.uploaded_at.desc(), workbook_cls.id.desc())
+        .all()
+    )
+    for previous_active in previous_active_workbooks:
+        previous_active.active = False
+        previous_active.archived_at = datetime.utcnow()
+        if not previous_active.change_summary:
+            previous_active.change_summary = f"Archived when version {new_version_number} was uploaded."
+        else:
+            previous_active.change_summary = f"{previous_active.change_summary} | Archived when version {new_version_number} was uploaded."
+
+
+def _merge_sheet_mapping(mapping_row, matched_station, sheet_index: int | None, previous_mapping_row=None) -> None:
+    if matched_station is not None:
+        mapping_row.station_id = matched_station.id
+        mapping_row.match_status = "matched"
+    elif getattr(mapping_row, "station_id", None) is None and previous_mapping_row is not None and getattr(previous_mapping_row, "station_id", None) is not None:
+        mapping_row.station_id = previous_mapping_row.station_id
+        mapping_row.match_status = previous_mapping_row.match_status or "unmatched"
+    elif getattr(mapping_row, "match_status", None) in (None, ""):
+        mapping_row.match_status = "unmatched"
+
+    if sheet_index is not None:
+        mapping_row.sheet_index = sheet_index
+    elif getattr(mapping_row, "sheet_index", None) is None and previous_mapping_row is not None:
+        mapping_row.sheet_index = previous_mapping_row.sheet_index
+
+    if getattr(mapping_row, "match_status", None) in (None, ""):
+        mapping_row.match_status = previous_mapping_row.match_status or "unmatched" if previous_mapping_row is not None else "unmatched"
 
 
 # ---------------------------------------------------------------------------
@@ -196,12 +354,41 @@ def station_detail(station_id):
         graph_nodes.append({"id": tid, "label": label, "group": "topic"})
         graph_edges.append({"from": tid, "to": stn_nid})
 
-    # --- WIS documents for this station ---
+    # --- WIS/PPE documents for this station ---
     wis_docs = None
+    wis_sheets = []
+    ppe_sheets = []
     is_admin = False
     with SessionLocal() as _s:
         wis_docs = _s.query(StationWISDocument).filter_by(station_id=station_id).order_by(StationWISDocument.uploaded_at.desc()).all()
+        wis_sheets = (
+            _s.query(StationWISSheet)
+            .join(ShopWISWorkbook)
+            .options(joinedload(StationWISSheet.workbook), joinedload(StationWISSheet.station))
+            .filter(StationWISSheet.station_id == station_id, ShopWISWorkbook.active.is_(True))
+            .order_by(StationWISSheet.uploaded_at.desc(), StationWISSheet.sheet_index)
+            .all()
+        )
+        ppe_sheets = (
+            _s.query(StationPPESheet)
+            .join(ShopPPEWorkbook)
+            .options(joinedload(StationPPESheet.workbook), joinedload(StationPPESheet.station))
+            .filter(StationPPESheet.station_id == station_id, ShopPPEWorkbook.active.is_(True))
+            .order_by(StationPPESheet.uploaded_at.desc(), StationPPESheet.sheet_index)
+            .all()
+        )
         is_admin = request.authorization and check_auth(request.authorization.username, request.authorization.password)
+
+    wis_sheet_views = []
+    for sheet in wis_sheets:
+        wis_sheet_views.append({"sheet": sheet})
+
+    ppe_sheet_views = []
+    for sheet in ppe_sheets:
+        preview_rows = []
+        if sheet.workbook and sheet.workbook.file_path and os.path.exists(sheet.workbook.file_path):
+            preview_rows = _read_sheet_preview_rows(sheet.workbook.file_path, sheet.sheet_name)
+        ppe_sheet_views.append({"sheet": sheet, "preview_rows": preview_rows})
 
     return render_template(
         "station.html",
@@ -211,8 +398,27 @@ def station_detail(station_id):
         graph_nodes    = graph_nodes,
         graph_edges    = graph_edges,
         wis_docs       = wis_docs,
+        wis_sheet_views = wis_sheet_views,
+        ppe_sheet_views = ppe_sheet_views,
         is_admin       = is_admin,
     )
+
+
+@app.route("/wis-sheet/<int:sheet_id>")
+def open_wis_sheet(sheet_id):
+    with SessionLocal() as _s:
+        sheet = _s.get(StationWISSheet, sheet_id)
+        if not sheet or not sheet.workbook:
+            abort(404)
+        workbook = sheet.workbook
+        if not workbook.file_path or not os.path.exists(workbook.file_path):
+            abort(404)
+        return send_file(
+            workbook.file_path,
+            mimetype=_get_workbook_mimetype(workbook.file_path),
+            as_attachment=False,
+            download_name=workbook.file_name or os.path.basename(workbook.file_path),
+        )
 
 
 @app.route("/graph")
@@ -247,6 +453,7 @@ def _parse_station_hierarchy(stations, shop_code: str | None = None):
         "TCF_1":       ["cell", "line", "zone_no"],
         "ENGINE_SHOP": ["cell", "line", "zone_no"],
         "TRANSAXLE_SHOP": ["cell", "line", "zone_no"],
+        "PRESS_SHOP": ["cell", "line", "zone_no"],
         "JLR":        ["cell", "line", "zone_no"],
         "EV_SHOP":     ["cell", "line", "zone_no"],
         "X4_BIW":      ["cell", "line", "zone_no"],
@@ -423,12 +630,14 @@ def _parse_weld_biw_subhierarchy(stations, biw_key):
 @app.route("/shop/<shop_code>")
 def shop_detail(shop_code):
     with SessionLocal() as db:
-        shop = db.query(Shop).filter_by(shop_code=shop_code).first()
+        shop = _resolve_shop_record(db, shop_code)
         if not shop:
             flash(f"Shop '{shop_code}' not found.", "danger")
             return redirect(url_for("index"))
         stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order, Station.id).all()
         wis_docs = db.query(ShopWISDocument).filter_by(shop_id=shop.id).order_by(ShopWISDocument.uploaded_at.desc()).all()
+        wis_workbooks = db.query(ShopWISWorkbook).filter_by(shop_id=shop.id).order_by(ShopWISWorkbook.uploaded_at.desc()).all()
+        ppe_workbooks = db.query(ShopPPEWorkbook).filter_by(shop_id=shop.id).order_by(ShopPPEWorkbook.uploaded_at.desc()).all()
         is_admin = request.authorization and check_auth(request.authorization.username, request.authorization.password)
 
         # Weld Shop: show BIW group selector cards first
@@ -438,14 +647,14 @@ def shop_detail(shop_code):
                 return render_template(
                     "shop.html", shop=shop,
                     subgroups=subgroups, hierarchy=None, subgroup=None,
-                    wis_docs=wis_docs, is_admin=is_admin,
+                    wis_docs=wis_docs, wis_workbooks=wis_workbooks, ppe_workbooks=ppe_workbooks, is_admin=is_admin,
                 )
 
         hierarchy, group_label = _parse_station_hierarchy(stations, shop.shop_code)
         return render_template(
             "shop.html", shop=shop,
             hierarchy=hierarchy, group_label=group_label, subgroups=None, subgroup=None,
-            wis_docs=wis_docs, is_admin=is_admin,
+            wis_docs=wis_docs, wis_workbooks=wis_workbooks, ppe_workbooks=ppe_workbooks, is_admin=is_admin,
         )
 
 
@@ -453,12 +662,14 @@ def shop_detail(shop_code):
 def shop_subgroup(shop_code, subgroup):
     """Renders the tree for a shop sub-group (e.g. Weld BIW model)."""
     with SessionLocal() as db:
-        shop = db.query(Shop).filter_by(shop_code=shop_code).first()
+        shop = _resolve_shop_record(db, shop_code)
         if not shop:
             flash(f"Shop '{shop_code}' not found.", "danger")
             return redirect(url_for("index"))
         stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order, Station.id).all()
         wis_docs = db.query(ShopWISDocument).filter_by(shop_id=shop.id).order_by(ShopWISDocument.uploaded_at.desc()).all()
+        wis_workbooks = db.query(ShopWISWorkbook).filter_by(shop_id=shop.id).order_by(ShopWISWorkbook.uploaded_at.desc()).all()
+        ppe_workbooks = db.query(ShopPPEWorkbook).filter_by(shop_id=shop.id).order_by(ShopPPEWorkbook.uploaded_at.desc()).all()
         is_admin = request.authorization and check_auth(request.authorization.username, request.authorization.password)
 
         if shop_code == "WELD_SHOP":
@@ -472,14 +683,14 @@ def shop_subgroup(shop_code, subgroup):
         return render_template(
             "shop.html", shop=shop,
             hierarchy=hierarchy, group_label=group_label, subgroups=None, subgroup=subgroup_label,
-            wis_docs=wis_docs, is_admin=is_admin,
+            wis_docs=wis_docs, wis_workbooks=wis_workbooks, ppe_workbooks=ppe_workbooks, is_admin=is_admin,
         )
 
 
 @app.route("/api/shop/<shop_code>/hierarchy")
 def api_shop_hierarchy(shop_code):
     with SessionLocal() as db:
-        shop = db.query(Shop).filter_by(shop_code=shop_code).first()
+        shop = _resolve_shop_record(db, shop_code)
         if not shop:
             return jsonify({"error": f"Shop '{shop_code}' not found"}), 404
         stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order, Station.id).all()
@@ -896,156 +1107,162 @@ def reset_db():
 
 
 # ===========================================================================
-# ROUTES — WIS Document Upload (PowerPoint presentations)
+# ROUTES — SHOP-LEVEL WIS / PPE WORKBOOKS
 # ===========================================================================
+
+def _persist_shop_workbook_upload(shop_code: str, file_storage, workbook_kind: str, uploaded_by: str | None, change_summary: str | None = None):
+    if not file_storage or not file_storage.filename:
+        flash("No file selected.", "danger")
+        return False
+
+    if not allowed_workbook_file(file_storage.filename):
+        flash(f"❌ Rejected '{file_storage.filename}': only .xlsx and .xlsm files are accepted.", "danger")
+        logger.warning(f"Workbook upload rejected — invalid extension: {file_storage.filename}")
+        return False
+
+    if not shop_code:
+        flash("No shop selected.", "danger")
+        return False
+
+    with SessionLocal() as db:
+        shop = _resolve_shop_record(db, shop_code)
+        if not shop:
+            flash(f"Shop '{shop_code}' not found.", "danger")
+            return False
+
+        target_dir = os.path.join(UPLOAD_FOLDER, "wis" if workbook_kind == "wis" else "ppe", "workbooks", shop.shop_code)
+        os.makedirs(target_dir, exist_ok=True)
+
+        original_name = secure_filename(file_storage.filename)
+        stem, ext = os.path.splitext(original_name)
+        unique_name = f"{stem}_{_uuid.uuid4().hex[:8]}{ext}"
+        filepath = os.path.join(target_dir, unique_name)
+
+        try:
+            file_storage.save(filepath)
+        except Exception as save_err:
+            flash(f"❌ Could not save file: {save_err}", "danger")
+            logger.error(f"File save error: {save_err}")
+            return False
+
+        try:
+            workbook = load_workbook(filepath, read_only=True, data_only=True)
+            sheet_names = workbook.sheetnames
+            workbook.close()
+        except Exception as parse_err:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            flash(f"❌ Could not read workbook: {parse_err}", "danger")
+            logger.error(f"Workbook parse error: {parse_err}")
+            return False
+
+        try:
+            if workbook_kind == "wis":
+                workbook_cls = ShopWISWorkbook
+                mapping_cls = StationWISSheet
+            else:
+                workbook_cls = ShopPPEWorkbook
+                mapping_cls = StationPPESheet
+
+            previous_active_workbook = (
+                db.query(workbook_cls)
+                .filter(workbook_cls.shop_id == shop.id, workbook_cls.active.is_(True))
+                .order_by(workbook_cls.uploaded_at.desc(), workbook_cls.id.desc())
+                .first()
+            )
+            previous_mapping_lookup = {}
+            if previous_active_workbook:
+                previous_mappings = db.query(mapping_cls).filter_by(workbook_id=previous_active_workbook.id).all()
+                previous_mapping_lookup = {mapping.sheet_name: mapping for mapping in previous_mappings}
+
+            version_number = _get_next_workbook_version(db, workbook_cls, shop.id)
+            _archive_previous_active_workbook(db, workbook_cls, shop.id, version_number)
+            change_summary_value = _build_workbook_change_summary(change_summary, workbook_kind, previous_active_workbook)
+
+            workbook_record = workbook_cls(
+                shop_id=shop.id,
+                file_name=original_name,
+                file_path=filepath,
+                sheet_count=len(sheet_names),
+                version_number=version_number,
+                active=True,
+                archived_at=None,
+                change_summary=change_summary_value,
+                uploaded_by=uploaded_by,
+            )
+            db.add(workbook_record)
+            db.flush()
+
+            stations = db.query(Station).filter_by(shop_id=shop.id).order_by(Station.row_order, Station.id).all()
+            for sheet_index, sheet_name in enumerate(sheet_names):
+                matched_station = _match_station_for_sheet(sheet_name, stations)
+                previous_mapping = previous_mapping_lookup.get(sheet_name)
+                existing_mapping = db.query(mapping_cls).filter_by(workbook_id=workbook_record.id, sheet_name=sheet_name).first()
+                if existing_mapping is None:
+                    mapping_row = mapping_cls(
+                        workbook_id=workbook_record.id,
+                        station_id=matched_station.id if matched_station else (previous_mapping.station_id if previous_mapping is not None else None),
+                        sheet_name=sheet_name,
+                        sheet_index=sheet_index,
+                        match_status="matched" if matched_station else (previous_mapping.match_status if previous_mapping is not None else "unmatched"),
+                    )
+                    _merge_sheet_mapping(mapping_row, matched_station, sheet_index, previous_mapping)
+                    db.add(mapping_row)
+                else:
+                    _merge_sheet_mapping(existing_mapping, matched_station, sheet_index, previous_mapping)
+
+            db.commit()
+            logger.info(f"Shop {workbook_kind.upper()} workbook uploaded: shop_id={shop.id}, file='{original_name}', sheets={len(sheet_names)}")
+            flash(f"✅ {workbook_kind.upper()} workbook '{original_name}' uploaded for shop '{shop.name}'.", "success")
+            return True
+        except Exception as db_err:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            db.rollback()
+            flash(f"❌ Could not save workbook record: {db_err}", "danger")
+            logger.error(f"Database save error for workbook upload: {db_err}")
+            return False
+
+
+@app.route("/shop/<shop_code>/upload-wis-workbook", methods=["POST"])
+@requires_auth
+def upload_shop_wis_workbook(shop_code):
+    file = request.files.get("file")
+    uploaded_by = request.authorization.username if request.authorization else None
+    change_summary = request.form.get("change_summary", "").strip() or None
+    success = _persist_shop_workbook_upload(shop_code, file, "wis", uploaded_by, change_summary)
+    if success:
+        return redirect(url_for("shop_detail", shop_code=shop_code))
+    return redirect(url_for("shop_detail", shop_code=shop_code))
+
+
+@app.route("/shop/<shop_code>/upload-ppe-workbook", methods=["POST"])
+@requires_auth
+def upload_shop_ppe_workbook(shop_code):
+    file = request.files.get("file")
+    uploaded_by = request.authorization.username if request.authorization else None
+    change_summary = request.form.get("change_summary", "").strip() or None
+    success = _persist_shop_workbook_upload(shop_code, file, "ppe", uploaded_by, change_summary)
+    if success:
+        return redirect(url_for("shop_detail", shop_code=shop_code))
+    return redirect(url_for("shop_detail", shop_code=shop_code))
+
 
 @app.route("/admin/upload-shop-wis", methods=["POST"])
 @requires_auth
 def upload_shop_wis():
-    """Upload WIS (Work Instruction Set) PowerPoint document for a shop."""
-    if "file" not in request.files:
-        flash("No file part in request.", "danger")
-        return redirect(url_for("admin"))
-
-    file = request.files["file"]
-    shop_code = request.form.get("shop_code", "").strip()
-
-    if not file or not file.filename:
-        flash("No file selected.", "danger")
-        return redirect(url_for("admin"))
-
-    if not allowed_wis_file(file.filename):
-        flash(
-            f"❌ Rejected '{file.filename}': only .ppt and .pptx files are accepted.",
-            "danger",
-        )
-        logger.warning(f"WIS upload rejected — invalid extension: {file.filename}")
-        return redirect(url_for("admin"))
-
-    if not shop_code:
-        flash("No shop selected.", "danger")
-        return redirect(url_for("admin"))
-
-    with SessionLocal() as db:
-        shop = db.query(Shop).filter_by(shop_code=shop_code).first()
-        if not shop:
-            flash(f"Shop '{shop_code}' not found.", "danger")
-            return redirect(url_for("admin"))
-
-    # Create shop-specific directory
-    wis_shop_dir = os.path.join(UPLOAD_FOLDER, "wis", "shops", shop.name)
-    os.makedirs(wis_shop_dir, exist_ok=True)
-
-    # Save file with UUID suffix
-    original_name = secure_filename(file.filename)
-    stem, ext = os.path.splitext(original_name)
-    unique_name = f"{stem}_{_uuid.uuid4().hex[:8]}{ext}"
-    filepath = os.path.join(wis_shop_dir, unique_name)
-
-    try:
-        file.save(filepath)
-    except Exception as save_err:
-        flash(f"❌ Could not save file: {save_err}", "danger")
-        logger.error(f"File save error: {save_err}")
-        return redirect(url_for("admin"))
-
-    # Create database record
-    try:
-        with SessionLocal() as db:
-            db_doc = ShopWISDocument(
-                shop_id=shop.id,
-                file_name=original_name,
-                file_path=filepath,
-                uploaded_by=request.authorization.username if request.authorization else None,
-            )
-            db.add(db_doc)
-            db.commit()
-            logger.info(f"Shop WIS document uploaded: shop_id={shop.id}, file='{original_name}'")
-            flash(f"✅ WIS document '{original_name}' uploaded for shop '{shop.name}'.", "success")
-    except Exception as db_err:
-        if os.path.exists(filepath):
-            os.remove(filepath)
-        flash(f"❌ Could not save document record: {db_err}", "danger")
-        logger.error(f"Database save error for shop WIS: {db_err}")
-
+    file = request.files.get("file")
+    shop_code = request.form.get("shop_code", "").strip() or request.form.get("shop", "").strip()
+    uploaded_by = request.authorization.username if request.authorization else None
+    change_summary = request.form.get("change_summary", "").strip() or None
+    _persist_shop_workbook_upload(shop_code, file, "wis", uploaded_by, change_summary)
     return redirect(url_for("admin"))
 
 
 @app.route("/admin/upload-station-wis", methods=["POST"])
 @requires_auth
 def upload_station_wis():
-    """Upload WIS (Work Instruction Set) PowerPoint document for a station."""
-    if "file" not in request.files:
-        flash("No file part in request.", "danger")
-        return redirect(url_for("admin"))
-
-    file = request.files["file"]
-    station_id_str = request.form.get("station_id", "").strip()
-
-    if not file or not file.filename:
-        flash("No file selected.", "danger")
-        return redirect(url_for("admin"))
-
-    if not allowed_wis_file(file.filename):
-        flash(
-            f"❌ Rejected '{file.filename}': only .ppt and .pptx files are accepted.",
-            "danger",
-        )
-        logger.warning(f"WIS upload rejected — invalid extension: {file.filename}")
-        return redirect(url_for("admin"))
-
-    if not station_id_str:
-        flash("No station selected.", "danger")
-        return redirect(url_for("admin"))
-
-    try:
-        station_id = int(station_id_str)
-    except (ValueError, TypeError):
-        flash("Invalid station ID.", "danger")
-        return redirect(url_for("admin"))
-
-    with SessionLocal() as db:
-        station = db.query(Station).filter_by(id=station_id).first()
-        if not station:
-            flash(f"Station ID {station_id} not found.", "danger")
-            return redirect(url_for("admin"))
-
-    # Create station-specific directory
-    wis_station_dir = os.path.join(UPLOAD_FOLDER, "wis", "stations", station.station_code)
-    os.makedirs(wis_station_dir, exist_ok=True)
-
-    # Save file with UUID suffix
-    original_name = secure_filename(file.filename)
-    stem, ext = os.path.splitext(original_name)
-    unique_name = f"{stem}_{_uuid.uuid4().hex[:8]}{ext}"
-    filepath = os.path.join(wis_station_dir, unique_name)
-
-    try:
-        file.save(filepath)
-    except Exception as save_err:
-        flash(f"❌ Could not save file: {save_err}", "danger")
-        logger.error(f"File save error: {save_err}")
-        return redirect(url_for("admin"))
-
-    # Create database record
-    try:
-        with SessionLocal() as db:
-            db_doc = StationWISDocument(
-                station_id=station_id,
-                file_name=original_name,
-                file_path=filepath,
-                uploaded_by=request.authorization.username if request.authorization else None,
-            )
-            db.add(db_doc)
-            db.commit()
-            logger.info(f"Station WIS document uploaded: station_id={station_id}, file='{original_name}'")
-            flash(f"✅ WIS document '{original_name}' uploaded for station '{station.station_code}'.", "success")
-    except Exception as db_err:
-        if os.path.exists(filepath):
-            os.remove(filepath)
-        flash(f"❌ Could not save document record: {db_err}", "danger")
-        logger.error(f"Database save error for station WIS: {db_err}")
-
+    flash("Station-level uploads are disabled. Use the shop page to upload WIS/PPE workbooks.", "warning")
     return redirect(url_for("admin"))
 
 
@@ -1229,9 +1446,13 @@ def _wal_checkpoint():
 
 
 
+init_db()
+_ensure_workbook_versioning_schema()
+
 atexit.register(_wal_checkpoint)
 
 if __name__ == "__main__":
     init_db()
+    _ensure_workbook_versioning_schema()
     logger.info(f"Starting IIK-CME production server on port 5000. DEBUG={DEBUG_MODE}")
     app.run(host="0.0.0.0", port=5000, debug=DEBUG_MODE, use_reloader=DEBUG_MODE)

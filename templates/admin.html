@@ -65,6 +65,7 @@
                 <button type="button" class="shop-tile" data-shop="PAINT_SHOP" onclick="selectShop(this)">🎨<span>Paint Shop</span></button>
                 <button type="button" class="shop-tile" data-shop="ENGINE_SHOP" onclick="selectShop(this)">⚙️<span>Engine Shop</span></button>
                 <button type="button" class="shop-tile" data-shop="TRANSAXLE_SHOP" onclick="selectShop(this)">🔩<span>Transaxle Shop</span></button>
+                <button type="button" class="shop-tile" data-shop="PRESS_SHOP" onclick="selectShop(this)">🛠️<span>Press Shop</span></button>
                 <button type="button" class="shop-tile" data-shop="EV_SHOP"   onclick="selectShop(this)">⚡<span>EV Shop</span></button>
                 <button type="button" class="shop-tile" data-shop="JLR_SHOP"  onclick="selectShop(this)">🚘<span>JLR Shop</span></button>
                 <button type="button" class="shop-tile" data-shop="X1_BIW"    onclick="selectShop(this)">🚗<span>X1 BIW</span></button>
@@ -126,6 +127,7 @@
                         <label for="file" class="file-drop-label" id="file-drop-label">
                             <span class="file-icon">📂</span>
                             <span id="file-name-display">Drag &amp; drop or click to select .xlsx / .xls</span>
+                            <button type="button" id="choose-workbook-btn" class="secondary-btn" style="margin-top:.75rem;">📄 Choose Workbook</button>
                         </label>
                     </div>
                 </div>
@@ -548,6 +550,15 @@ function updateFileLabel(input) {
         label.textContent = '📄 ' + input.files[0].name;
         document.getElementById('file-drop-zone').classList.add('file-selected');
     }
+}
+
+const chooseWorkbookBtn = document.getElementById('choose-workbook-btn');
+const adminFileInput = document.getElementById('file');
+if (chooseWorkbookBtn && adminFileInput) {
+    chooseWorkbookBtn.addEventListener('click', e => {
+        e.preventDefault();
+        adminFileInput.click();
+    });
 }
 
 /* ── Drag and drop ───────────────────────────────── */
