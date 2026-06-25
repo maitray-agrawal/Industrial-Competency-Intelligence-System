@@ -978,7 +978,7 @@ class IngestionPipeline:
             shop_key = shop.strip().upper()
             # Resolve alias (UI code -> schema display key) non-destructively
             schema_key = SHOP_ALIASES.get(shop_key, shop_key)
-            logger.info(f"Schema lookup: shop={shop_key}, schema_key={schema_key}")
+            logger.info(f"Shop='{shop_key}' Schema='{schema_key}'")
             schema = SHOP_SCHEMAS.get(schema_key)
             if schema:
                 logger.info(f"Applying shop-specific schema for '{schema_key}'")
